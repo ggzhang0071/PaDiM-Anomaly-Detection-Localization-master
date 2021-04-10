@@ -12,16 +12,24 @@ from sklearn.metrics import precision_recall_curve
 from sklearn.covariance import LedoitWolf
 from scipy.spatial.distance import mahalanobis
 from scipy.ndimage import gaussian_filter
+from torch.utils.data import Dataset
 from skimage import morphology
+from albumentations.augmentations import transforms
+from albumentations.core.composition import Compose
 from skimage.segmentation import mark_boundaries
 import matplotlib.pyplot as plt
 import matplotlib
-
+from config import default_config
+import sys
+sys.path.append("./data_loader/lib")
+from common_lib import DataManager
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+#from data_loader import DataLoader
+
 from torchvision.models import wide_resnet50_2, resnet18
-import datasets.mvtec as mvtec
+#import datasets.mvtec as mvtec
 
 
 # device setup
@@ -31,16 +39,17 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
-    parser.add_argument('--data_path', type=str, default='D:/dataset/mvtec_anomaly_detection')
-    parser.add_argument('--save_path', type=str, default='./mvtec_result')
+    #parser.add_argument('--data_path', type=str, default='D:/dataset/mvtec_anomaly_detection')
+    parser.add_argument('--data_path', type=str, default='D:/dataset/kangqiang_anomaly_detection')
+    #parser.add_argument('--save_path', type=str, default='./mvtec_result')
+    parser.add_argument('--save_path', type=str, default='./kangqiang_result')
+
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
     return parser.parse_args()
 
 
 def main():
-
     args = parse_args()
-
     # load model
     if args.arch == 'resnet18':
         model = resnet18(pretrained=True, progress=True)
@@ -50,7 +59,7 @@ def main():
         model = wide_resnet50_2(pretrained=True, progress=True)
         t_d = 1792
         d = 550
-    model.to(device)
+    model.to("cuda:2,3")
     model.eval()
     random.seed(1024)
     torch.manual_seed(1024)
@@ -77,13 +86,40 @@ def main():
     total_roc_auc = []
     total_pixel_roc_auc = []
 
-    for class_name in mvtec.CLASS_NAMES:
+    
+    # load dataset
+    train_transform = Compose([
+        transforms.Resize(default_config.Input_Height, default_config.Input_Width),
+    ])
 
-        train_dataset = mvtec.MVTecDataset(args.data_path, class_name=class_name, is_train=True)
-        train_dataloader = DataLoader(train_dataset, batch_size=32, pin_memory=True)
-        test_dataset = mvtec.MVTecDataset(args.data_path, class_name=class_name, is_train=False)
-        test_dataloader = DataLoader(test_dataset, batch_size=32, pin_memory=True)
+    val_transform = Compose([
+        transforms.Resize(default_config.Input_Height, default_config.Input_Width),
+    ])
 
+    train_dataset = Dataset(
+        json_file=default_config.Json_Train,
+        image_data_root=default_config.Image_Data_Root,
+        transform=train_transform,
+        resampling='balance'
+    )
+    val_dataset = Dataset(
+        json_file=default_config.Json_Val,
+        image_data_root=default_config.Image_Data_Root,
+        transform=val_transform)  # use real data as validation
+
+    train_dataloader = DataLoader(train_dataset,batch_size=default_config.Batch_Size,
+        #shuffle=True,
+        num_workers=default_config.Num_Workers,
+        drop_last=True)
+    test_dataloader =DataLoader(
+        val_dataset,
+        batch_size=default_config.Batch_Size_Test,
+        #shuffle=False,
+        num_workers=default_config.Num_Workers,
+        drop_last=False)
+   ###
+    
+    for _ in 1:
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
         test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
 
