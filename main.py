@@ -34,7 +34,7 @@ from torchvision.models import wide_resnet50_2, resnet18
 
 # device setup
 use_cuda = torch.cuda.is_available()
-device = torch.device('cuda' if use_cuda else 'cpu')
+device = torch.device('cuda:1,3' if use_cuda else 'cpu')
 
 
 def parse_args():
@@ -95,12 +95,14 @@ def main():
     ])
 
    ###
-    product_class=['qipan-QFN-32L', 'DFN-20X20-3L', 'DFN7X6.5-6L', '0711DFN-2X3-8L', 'QFN-44L', 'QFN-28L', 'QFN-2.5X4.5-20L', 'QFN-4X4-24L', '0919DFN-10LAR', 'QFN-5X5-40L', 'QFN-3X3-H-16L', '0420QFN-4X4-24L', 'QFN3X3-20B', '1129QFN-4X4-24L', '1122QFN-3X3-16L', '1031QFN-24L', '1101QFN-40L']
+    #product_class=['qipan-QFN-32L', 'DFN-20X20-3L', 'DFN7X6.5-6L', '0711DFN-2X3-8L', 'QFN-44L', 'QFN-28L', 'QFN-2.5X4.5-20L', 'QFN-4X4-24L', '0919DFN-10LAR', 'QFN-5X5-40L', 'QFN-3X3-H-16L', '0420QFN-4X4-24L', 'QFN3X3-20B', '1129QFN-4X4-24L', '1122QFN-3X3-16L', '1031QFN-24L', '1101QFN-40L']
+    product_class=['qipan-QFN-32L', 'DFN-20X20-3L']
+
 
     
     file_path='assets_new/data/2021-03-05'
     train_file_name='train.json'
-    test_file_name="test.json"
+    val_file_name="test.json"
 
     for class_name in product_class:
         train_dataset = Dataset(
@@ -110,7 +112,7 @@ def main():
             resampling='balance'
         )
         val_dataset = Dataset(
-            json_file=file_path+"/"+class_name+"/"+test_file_name,
+            json_file=file_path+"/"+class_name+"/"+val_file_name,
             image_data_root=default_config.Image_Data_Root,
             transform=val_transform,
             )  # use real data as validation
@@ -129,29 +131,15 @@ def main():
             #sampler=val_sampler,
             drop_last=False)
 
-        """data_loader = DataLoader(image_data_root=default_config.Image_Data_Root)
-        # load dataset
-        data = DataManager.from_json(file_path+"/"+class_name+"/"+file_name)
-        # data = data.filter(lambda rec: len(rec['instances']) > 0, verbose=True)
-
-        # infer
-        record_list = data.record_list
-        random.shuffle(record_list)
-        for record in record_list:
-            dat = data_loader.load(record)
-            image_ok = dat['template']
-            image_ng = dat['image']"""
-            
-
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
         test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
 
         # extract train set features
         train_feature_filepath = os.path.join(args.save_path, 'temp_%s' % args.arch, 'train_%s.pkl' % class_name)
         if not os.path.exists(train_feature_filepath):
-            for (inputs, _, _) in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
+            for (x, _, _) in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
+                x=x[:,:3,:]
                 # model prediction
-                x=inputs[:,:3,:]
                 with torch.no_grad():
                     _ = model(x.to(device))
                 # get intermediate layer outputs
@@ -192,7 +180,7 @@ def main():
         test_imgs = []
 
         # extract test set features
-        for (x, y, mask) in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
+        for (x, _, _) in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
             x=x[:,:3,:]
             test_imgs.extend(x.cpu().detach().numpy())
             #gt_list.extend(y.cpu().detach().numpy())
@@ -333,7 +321,7 @@ def plot_fig(test_img, scores, save_dir, class_name):
         }
         cb.set_label('Anomaly Score', fontdict=font)
 
-        fig_img.savefig(os.path.join(save_dir, class_name + '_{}'.format(i)), dpi=100)
+        fig_img.savefig(os.path.join(save_dir, class_name + '_{}'.format(i)+".jpg"), dpi=100)
         plt.close()
 
 
