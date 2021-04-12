@@ -12,7 +12,7 @@ from sklearn.metrics import precision_recall_curve
 from sklearn.covariance import LedoitWolf
 from scipy.spatial.distance import mahalanobis
 from scipy.ndimage import gaussian_filter
-from torch.utils.data import Dataset
+from dataset  import Dataset
 from skimage import morphology
 from albumentations.augmentations import transforms
 from albumentations.core.composition import Compose
@@ -25,8 +25,8 @@ sys.path.append("./data_loader/lib")
 from common_lib import DataManager
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-#from data_loader import DataLoader
+#from torch.utils.data import DataLoader
+from data_loader import DataLoader
 
 from torchvision.models import wide_resnet50_2, resnet18
 #import datasets.mvtec as mvtec
@@ -43,10 +43,8 @@ def parse_args():
     parser.add_argument('--data_path', type=str, default='D:/dataset/kangqiang_anomaly_detection')
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='./kangqiang_result')
-
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
     return parser.parse_args()
-
 
 def main():
     args = parse_args()
@@ -59,7 +57,7 @@ def main():
         model = wide_resnet50_2(pretrained=True, progress=True)
         t_d = 1792
         d = 550
-    model.to("cuda:2,3")
+    model.to(device)
     model.eval()
     random.seed(1024)
     torch.manual_seed(1024)
@@ -89,45 +87,71 @@ def main():
     
     # load dataset
     train_transform = Compose([
-        transforms.Resize(default_config.Input_Height, default_config.Input_Width),
+        transforms.Resize(224, 224),
     ])
 
     val_transform = Compose([
-        transforms.Resize(default_config.Input_Height, default_config.Input_Width),
+        transforms.Resize(224,224),
     ])
 
-    train_dataset = Dataset(
-        json_file=default_config.Json_Train,
-        image_data_root=default_config.Image_Data_Root,
-        transform=train_transform,
-        resampling='balance'
-    )
-    val_dataset = Dataset(
-        json_file=default_config.Json_Val,
-        image_data_root=default_config.Image_Data_Root,
-        transform=val_transform)  # use real data as validation
-
-    train_dataloader = DataLoader(train_dataset,batch_size=default_config.Batch_Size,
-        #shuffle=True,
-        num_workers=default_config.Num_Workers,
-        drop_last=True)
-    test_dataloader =DataLoader(
-        val_dataset,
-        batch_size=default_config.Batch_Size_Test,
-        #shuffle=False,
-        num_workers=default_config.Num_Workers,
-        drop_last=False)
    ###
+    product_class=['qipan-QFN-32L', 'DFN-20X20-3L', 'DFN7X6.5-6L', '0711DFN-2X3-8L', 'QFN-44L', 'QFN-28L', 'QFN-2.5X4.5-20L', 'QFN-4X4-24L', '0919DFN-10LAR', 'QFN-5X5-40L', 'QFN-3X3-H-16L', '0420QFN-4X4-24L', 'QFN3X3-20B', '1129QFN-4X4-24L', '1122QFN-3X3-16L', '1031QFN-24L', '1101QFN-40L']
+
     
-    for _ in 1:
+    file_path='assets_new/data/2021-03-05'
+    train_file_name='train.json'
+    test_file_name="test.json"
+
+    for class_name in product_class:
+        train_dataset = Dataset(
+            json_file=file_path+"/"+class_name+"/"+train_file_name,
+            image_data_root=default_config.Image_Data_Root,
+            transform=train_transform,
+            resampling='balance'
+        )
+        val_dataset = Dataset(
+            json_file=file_path+"/"+class_name+"/"+test_file_name,
+            image_data_root=default_config.Image_Data_Root,
+            transform=val_transform,
+            )  # use real data as validation
+
+        train_dataloader =  torch.utils.data.DataLoader(train_dataset,
+        batch_size=default_config.Batch_Size,
+            #shuffle=True,
+            num_workers=default_config.Num_Workers,
+            #sampler=train_sampler,
+            drop_last=True)
+        test_dataloader = torch.utils.data.DataLoader(
+            val_dataset,
+            batch_size=default_config.Batch_Size_Test,
+            #shuffle=False,
+            num_workers=default_config.Num_Workers,
+            #sampler=val_sampler,
+            drop_last=False)
+
+        """data_loader = DataLoader(image_data_root=default_config.Image_Data_Root)
+        # load dataset
+        data = DataManager.from_json(file_path+"/"+class_name+"/"+file_name)
+        # data = data.filter(lambda rec: len(rec['instances']) > 0, verbose=True)
+
+        # infer
+        record_list = data.record_list
+        random.shuffle(record_list)
+        for record in record_list:
+            dat = data_loader.load(record)
+            image_ok = dat['template']
+            image_ng = dat['image']"""
+            
+
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
         test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
 
         # extract train set features
         train_feature_filepath = os.path.join(args.save_path, 'temp_%s' % args.arch, 'train_%s.pkl' % class_name)
         if not os.path.exists(train_feature_filepath):
-            for (x, _, _) in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
+            for (inputs, _, _) in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
                 # model prediction
+                x=inputs[:,:3,:]
                 with torch.no_grad():
                     _ = model(x.to(device))
                 # get intermediate layer outputs
@@ -169,9 +193,10 @@ def main():
 
         # extract test set features
         for (x, y, mask) in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
+            x=x[:,:3,:]
             test_imgs.extend(x.cpu().detach().numpy())
-            gt_list.extend(y.cpu().detach().numpy())
-            gt_mask_list.extend(mask.cpu().detach().numpy())
+            #gt_list.extend(y.cpu().detach().numpy())
+            #gt_mask_list.extend(mask.cpu().detach().numpy())
             # model prediction
             with torch.no_grad():
                 _ = model(x.to(device))
@@ -219,7 +244,7 @@ def main():
         
         # calculate image-level ROC AUC score
         img_scores = scores.reshape(scores.shape[0], -1).max(axis=1)
-        gt_list = np.asarray(gt_list)
+        """gt_list = np.asarray(gt_list)
         fpr, tpr, _ = roc_curve(gt_list, img_scores)
         img_roc_auc = roc_auc_score(gt_list, img_scores)
         total_roc_auc.append(img_roc_auc)
@@ -227,46 +252,47 @@ def main():
         fig_img_rocauc.plot(fpr, tpr, label='%s img_ROCAUC: %.3f' % (class_name, img_roc_auc))
         
         # get optimal threshold
-        gt_mask = np.asarray(gt_mask_list)
+        #gt_mask = np.asarray(gt_mask_list)
         precision, recall, thresholds = precision_recall_curve(gt_mask.flatten(), scores.flatten())
         a = 2 * precision * recall
         b = precision + recall
         f1 = np.divide(a, b, out=np.zeros_like(a), where=b != 0)
-        threshold = thresholds[np.argmax(f1)]
+        threshold = thresholds[np.argmax(f1)]"""
 
-        # calculate per-pixel level ROCAUC
+        """# calculate per-pixel level ROCAUC
         fpr, tpr, _ = roc_curve(gt_mask.flatten(), scores.flatten())
         per_pixel_rocauc = roc_auc_score(gt_mask.flatten(), scores.flatten())
         total_pixel_roc_auc.append(per_pixel_rocauc)
-        print('pixel ROCAUC: %.3f' % (per_pixel_rocauc))
+        print('pixel ROCAUC: %.3f' % (per_pixel_rocauc))"""
 
-        fig_pixel_rocauc.plot(fpr, tpr, label='%s ROCAUC: %.3f' % (class_name, per_pixel_rocauc))
+        #fig_pixel_rocauc.plot(fpr, tpr, label='%s ROCAUC: %.3f' % (class_name, per_pixel_rocauc))
         save_dir = args.save_path + '/' + f'pictures_{args.arch}'
         os.makedirs(save_dir, exist_ok=True)
-        plot_fig(test_imgs, scores, gt_mask_list, threshold, save_dir, class_name)
+        plot_fig(test_imgs, scores, save_dir, class_name)
 
-    print('Average ROCAUC: %.3f' % np.mean(total_roc_auc))
+    """print('Average ROCAUC: %.3f' % np.mean(total_roc_auc))
     fig_img_rocauc.title.set_text('Average image ROCAUC: %.3f' % np.mean(total_roc_auc))
     fig_img_rocauc.legend(loc="lower right")
 
     print('Average pixel ROCUAC: %.3f' % np.mean(total_pixel_roc_auc))
     fig_pixel_rocauc.title.set_text('Average pixel ROCAUC: %.3f' % np.mean(total_pixel_roc_auc))
-    fig_pixel_rocauc.legend(loc="lower right")
+    fig_pixel_rocauc.legend(loc="lower right")"""
 
     fig.tight_layout()
     fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
 
 
-def plot_fig(test_img, scores, gts, threshold, save_dir, class_name):
+def plot_fig(test_img, scores, save_dir, class_name):
     num = len(scores)
     vmax = scores.max() * 255.
     vmin = scores.min() * 255.
     for i in range(num):
         img = test_img[i]
         img = denormalization(img)
-        gt = gts[i].transpose(1, 2, 0).squeeze()
+        #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
         mask = scores[i]
+        threshold=0.7
         mask[mask > threshold] = 1
         mask[mask <= threshold] = 0
         kernel = morphology.disk(4)
@@ -281,16 +307,16 @@ def plot_fig(test_img, scores, gts, threshold, save_dir, class_name):
             ax_i.axes.yaxis.set_visible(False)
         ax_img[0].imshow(img)
         ax_img[0].title.set_text('Image')
-        ax_img[1].imshow(gt, cmap='gray')
-        ax_img[1].title.set_text('GroundTruth')
-        ax = ax_img[2].imshow(heat_map, cmap='jet', norm=norm)
-        ax_img[2].imshow(img, cmap='gray', interpolation='none')
-        ax_img[2].imshow(heat_map, cmap='jet', alpha=0.5, interpolation='none')
-        ax_img[2].title.set_text('Predicted heat map')
-        ax_img[3].imshow(mask, cmap='gray')
-        ax_img[3].title.set_text('Predicted mask')
-        ax_img[4].imshow(vis_img)
-        ax_img[4].title.set_text('Segmentation result')
+        #ax_img[1].imshow(gt, cmap='gray')
+        #ax_img[1].title.set_text('GroundTruth')
+        ax = ax_img[1].imshow(heat_map, cmap='jet', norm=norm)
+        ax_img[1].imshow(img, cmap='gray', interpolation='none')
+        ax_img[1].imshow(heat_map, cmap='jet', alpha=0.5, interpolation='none')
+        ax_img[1].title.set_text('Predicted heat map')
+        ax_img[2].imshow(mask, cmap='gray')
+        ax_img[2].title.set_text('Predicted mask')
+        ax_img[3].imshow(vis_img)
+        ax_img[3].title.set_text('Segmentation result')
         left = 0.92
         bottom = 0.15
         width = 0.015
@@ -315,7 +341,6 @@ def denormalization(x):
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
     x = (((x.transpose(1, 2, 0) * std) + mean) * 255.).astype(np.uint8)
-    
     return x
 
 
