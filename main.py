@@ -31,7 +31,6 @@ from data_loader import DataLoader
 from torchvision.models import wide_resnet50_2, resnet18
 #import datasets.mvtec as mvtec
 
-
 # device setup
 use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:1,3' if use_cuda else 'cpu')
@@ -61,6 +60,11 @@ def main():
     model.eval()
     random.seed(1024)
     torch.manual_seed(1024)
+    """
+    os.removedirs(args.save_path+"/pictures_wide_resnet50_2")
+    os.removedirs(args.save_path+"/pictures_temp_wide_resnet50_2")
+    os.remove(args.save_path+"/pictures_temp_wide_resnet50_2/*")"""
+
     if use_cuda:
         torch.cuda.manual_seed_all(1024)
 
@@ -96,8 +100,7 @@ def main():
 
    ###
     #product_class=['qipan-QFN-32L', 'DFN-20X20-3L', 'DFN7X6.5-6L', '0711DFN-2X3-8L', 'QFN-44L', 'QFN-28L', 'QFN-2.5X4.5-20L', 'QFN-4X4-24L', '0919DFN-10LAR', 'QFN-5X5-40L', 'QFN-3X3-H-16L', '0420QFN-4X4-24L', 'QFN3X3-20B', '1129QFN-4X4-24L', '1122QFN-3X3-16L', '1031QFN-24L', '1101QFN-40L']
-    product_class=['qipan-QFN-32L', 'DFN-20X20-3L']
-
+    product_class=['1031QFN-24L']
 
     
     file_path='assets_new/data/2021-03-05'
@@ -121,6 +124,7 @@ def main():
         batch_size=default_config.Batch_Size,
             #shuffle=True,
             num_workers=default_config.Num_Workers,
+            pin_memory=True,
             #sampler=train_sampler,
             drop_last=True)
         test_dataloader = torch.utils.data.DataLoader(
@@ -128,6 +132,7 @@ def main():
             batch_size=default_config.Batch_Size_Test,
             #shuffle=False,
             num_workers=default_config.Num_Workers,
+            pin_memory=True,
             #sampler=val_sampler,
             drop_last=False)
 
@@ -137,8 +142,7 @@ def main():
         # extract train set features
         train_feature_filepath = os.path.join(args.save_path, 'temp_%s' % args.arch, 'train_%s.pkl' % class_name)
         if not os.path.exists(train_feature_filepath):
-            for (x, _, _) in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
-                x=x[:,:3,:]
+            for x in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
                 # model prediction
                 with torch.no_grad():
                     _ = model(x.to(device))
@@ -180,8 +184,7 @@ def main():
         test_imgs = []
 
         # extract test set features
-        for (x, _, _) in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
-            x=x[:,:3,:]
+        for x in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
             test_imgs.extend(x.cpu().detach().numpy())
             #gt_list.extend(y.cpu().detach().numpy())
             #gt_mask_list.extend(mask.cpu().detach().numpy())
@@ -276,18 +279,18 @@ def plot_fig(test_img, scores, save_dir, class_name):
     vmin = scores.min() * 255.
     for i in range(num):
         img = test_img[i]
-        img = denormalization(img)
+        #img = denormalization(img)
         #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
         mask = scores[i]
-        threshold=0.7
+        threshold=0.8
         mask[mask > threshold] = 1
         mask[mask <= threshold] = 0
         kernel = morphology.disk(4)
         mask = morphology.opening(mask, kernel)
         mask *= 255
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
-        fig_img, ax_img = plt.subplots(1, 5, figsize=(12, 3))
+        fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
         for ax_i in ax_img:
@@ -342,8 +345,8 @@ def embedding_concat(x, y):
     for i in range(x.size(2)):
         z[:, :, i, :, :] = torch.cat((x[:, :, i, :, :], y), 1)
     z = z.view(B, -1, H2 * W2)
+    #z.cuda("cuda1,2,3")
     z = F.fold(z, kernel_size=s, output_size=(H1, W1), stride=s)
-
     return z
 
 
