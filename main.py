@@ -22,6 +22,7 @@ import matplotlib
 from  coding_related import decode_labelme_shape
 from config import default_config
 import sys
+import  copy
 import torch
 import torch.nn.functional as F
 import cv2
@@ -32,7 +33,7 @@ from torchvision.models import wide_resnet50_2, resnet18
 
 # device setup
 use_cuda = torch.cuda.is_available()
-device = torch.device('cuda:1,3' if use_cuda else 'cpu')
+device = torch.device('cuda:0,1,2,3' if use_cuda else 'cpu')
 
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
@@ -43,7 +44,6 @@ def parse_args():
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
     parser.add_argument('--train_num_samples', type=int, default=50)
     parser.add_argument('--test_num_samples', type=int, default=50)
-
     return parser.parse_args()
 
 def collate_fn(batch):
@@ -235,6 +235,7 @@ def main():
         score_map = F.interpolate(dist_list.unsqueeze(1), size=x.size(2), mode='bilinear',align_corners=False).squeeze().numpy()
         
         # apply gaussian smoothing on the score map
+        # for disturb anlysis, this can be deleted?
         for i in range(score_map.shape[0]):
             score_map[i] = gaussian_filter(score_map[i], sigma=1)
         
@@ -267,9 +268,14 @@ def main():
         print('pixel ROCAUC: %.3f' % (per_pixel_rocauc))"""
 
         #fig_pixel_rocauc.plot(fpr, tpr, label='%s ROCAUC: %.3f' % (class_name, per_pixel_rocauc))
-        save_dir = args.save_path + '/' + f'pictures_{args.arch}'
-        os.makedirs(save_dir, exist_ok=True)
-        plot_fig(test_imgs, scores, anomaly_point_lists,save_dir, class_name)
+        save_picture_dir = args.save_path + '/' + f'pictures_{args.arch}'
+        save_image_dir=args.save_path + '/' + f'segment_image_result_{args.arch}'
+        save_heatmap_dir=args.save_path + '/' + f'segment_heatmap_result_{args.arch}'
+        
+        os.makedirs(save_picture_dir, exist_ok=True)
+        os.makedirs(save_image_dir, exist_ok=True)
+        os.makedirs(save_heatmap_dir, exist_ok=True)
+        plot_fig(test_imgs, scores, anomaly_point_lists,save_picture_dir,save_image_dir,save_heatmap_dir,class_name)
 
     """print('Average ROCAUC: %.3f' % np.mean(total_roc_auc))
     fig_img_rocauc.title.set_text('Average image ROCAUC: %.3f' % np.mean(total_roc_auc))
@@ -282,34 +288,49 @@ def main():
     fig.tight_layout()
     fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
 
+def segment_image(img,mask,save_image_dir,class_name,image_id,step):
+    _, labels, stats, centroids = cv2.connectedComponentsWithStats(mask.astype("uint8"))
+    for i in range(len(stats)):
+        x,y,w,h,area=stats[i]
+        if 16<area<(224-1)*(224-1)*0.8:
+            croped = img[x:x+w,y:y+h]
+        elif area<=16:
+            if x<step or y<step or x>224-step or y>224-step:
+                if x<step:
+                    x=0
+                if y<step:
+                    y=0
+                if x>(224-step):
+                    x=224
+                if y>(224-step):
+                    y=224
+                croped=img[x:x+w,y:y+h]
+            else:
+                croped=img[x-step:x+w+step,y-step:y+h+step]
+        else:
+            continue
+        save_file_dir=os.path.join(save_image_dir,class_name+"_"+str(image_id)+ "_"+str(i)+".jpg")
+        cv2.imwrite(save_file_dir,croped)
 
-def plot_fig(test_img, scores,anomaly_point_lists, save_dir, class_name):
+def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_dir,save_heatmap_dir,class_name):
     num = len(scores)
     vmax = scores.max() * 255.
     vmin = scores.min() * 255.
     for i in range(num):
-        point=anomaly_point_lists[i]
         img = test_img[i]
         img=img/255
         img=img.permute(1, 2, 0)
         #img = denormalization(img)
         #gt = gts[i].transpose(1, 2, 0).squeeze()
-        shape=decode_labelme_shape(point)
         heat_map = scores[i] * 255
+        segment_heat_map=copy.deepcopy(heat_map)
         mask = scores[i]
-        threshold=(mask.max()+mask.min())/2*1.1
+        threshold=(mask.max()+mask.min())/2*0.8
         mask[mask > threshold] = 1
         mask[mask <= threshold] = 0
         kernel = morphology.disk(4)
         mask = morphology.opening(mask, kernel)
         mask *= 255
-        _, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
-        res = cv2.equalizeHist(cv2.convertScaleAbs(labels))
-
-        yinjiao_mask = cv2.fillPoly(np.zeros_like(img), [roi_contour], 255)
-        yinjiao_region = cv2.bitwise_and(img, yinjiao_mask)
-
-
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
         fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
@@ -319,12 +340,17 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_dir, class_name):
             ax_i.axes.yaxis.set_visible(False)
         img=(255*img.numpy()).astype(np.uint8)
         img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)  
-        #cv2.fillPoly(img, [np.array(shape,dtype=np.int32)],255)
-        cv2.rectangle(img,shape[0],shape[1],(0,255,0),-1)
+        img_for_segment=copy.deepcopy(img)
         ax_img[0].imshow(img)
         ax_img[0].title.set_text('Image')
+        points=anomaly_point_lists[i]
+        shapes=[]
+        for point  in points:
+            shape=(decode_labelme_shape(point))
+            cv2.rectangle(img,(int(shape[0][0]),int(shape[0][1])),(int(shape[1][0]),int(shape[1][1])),(0,255,0),2)
+        ax_img[1].imshow(img)
         #ax_img[1].imshow(gt, cmap='gray')
-        #ax_img[1].title.set_text('GroundTruth')
+        ax_img[1].title.set_text('GroundTruth')
         ax = ax_img[1].imshow(heat_map, cmap='jet', norm=norm)
         ax_img[1].imshow(img, cmap='gray', interpolation='none')
         ax_img[1].imshow(heat_map, cmap='jet', alpha=0.5, interpolation='none')
@@ -348,8 +374,10 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_dir, class_name):
             'size': 8,
         }
         cb.set_label('Anomaly Score', fontdict=font)
-
-        fig_img.savefig(os.path.join(save_dir, class_name + '_{}'.format(i)+".jpg"), dpi=100)
+        save_file_dir=os.path.join(save_picture_dir,class_name+ '_{}'.format(i)+".jpg")
+        fig_img.savefig(save_file_dir, dpi=100)
+        segment_image(img_for_segment,mask,save_image_dir,class_name,i,5)
+        segment_image(segment_heat_map,mask,save_heatmap_dir,class_name,i,5)
         plt.close()
 
 
