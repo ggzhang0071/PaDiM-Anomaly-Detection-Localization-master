@@ -12,21 +12,20 @@ from sklearn.metrics import precision_recall_curve
 from sklearn.covariance import LedoitWolf
 from scipy.spatial.distance import mahalanobis
 from scipy.ndimage import gaussian_filter
-from dataset  import Dataset
+from dataset  import JsonDataset
 from skimage import morphology
 from albumentations.augmentations import transforms
 from albumentations.core.composition import Compose
 from skimage.segmentation import mark_boundaries
 import matplotlib.pyplot as plt
 import matplotlib
+from  coding_related import decode_labelme_shape
 from config import default_config
 import sys
-sys.path.append("./data_loader/lib")
-from common_lib import DataManager
 import torch
 import torch.nn.functional as F
-#from torch.utils.data import DataLoader
-from data_loader import DataLoader
+import cv2
+from torch.utils.data import DataLoader, RandomSampler
 
 from torchvision.models import wide_resnet50_2, resnet18
 #import datasets.mvtec as mvtec
@@ -35,7 +34,6 @@ from torchvision.models import wide_resnet50_2, resnet18
 use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:1,3' if use_cuda else 'cpu')
 
-
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
     #parser.add_argument('--data_path', type=str, default='D:/dataset/mvtec_anomaly_detection')
@@ -43,7 +41,16 @@ def parse_args():
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='./kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
+    parser.add_argument('--train_num_samples', type=int, default=50)
+    parser.add_argument('--test_num_samples', type=int, default=50)
+
     return parser.parse_args()
+
+def collate_fn(batch):
+    imgs=[item[0] for item in batch]
+    points = [item[1] for item in batch]
+    imgs=torch.from_numpy(np.array(imgs)) 
+    return [imgs, points]
 
 def main():
     args = parse_args()
@@ -99,42 +106,42 @@ def main():
     ])
 
    ###
-    #product_class=['qipan-QFN-32L', 'DFN-20X20-3L', 'DFN7X6.5-6L', '0711DFN-2X3-8L', 'QFN-44L', 'QFN-28L', 'QFN-2.5X4.5-20L', 'QFN-4X4-24L', '0919DFN-10LAR', 'QFN-5X5-40L', 'QFN-3X3-H-16L', '0420QFN-4X4-24L', 'QFN3X3-20B', '1129QFN-4X4-24L', '1122QFN-3X3-16L', '1031QFN-24L', '1101QFN-40L']
-    product_class=['1031QFN-24L']
-
+    product_class=['0808QFN-16L', 'DFN-002A', 'QFN-3X3-16L', '0708DFN-8L', 'DFN-5X6-T-8L', '0420QFN-5X6-8L', '1101QFN-40L', '0713DFN-2X3-8L', 'DFN-5X6-8L', '1129QFN-4X4-24L']
     
-    file_path='assets_new/data/2021-03-05'
+    file_path='assets_new_new/data/2021-03-05'
     train_file_name='train.json'
     val_file_name="test.json"
-
+ 
     for class_name in product_class:
-        train_dataset = Dataset(
+        train_dataset = JsonDataset(
             json_file=file_path+"/"+class_name+"/"+train_file_name,
             image_data_root=default_config.Image_Data_Root,
             transform=train_transform,
-            resampling='balance'
         )
-        val_dataset = Dataset(
+        test_dataset = JsonDataset(
             json_file=file_path+"/"+class_name+"/"+val_file_name,
             image_data_root=default_config.Image_Data_Root,
             transform=val_transform,
             )  # use real data as validation
-
-        train_dataloader =  torch.utils.data.DataLoader(train_dataset,
+        train_sampler=RandomSampler(train_dataset,num_samples=args.train_num_samples, replacement=True)
+        test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)
+        train_dataloader =DataLoader(train_dataset,
         batch_size=default_config.Batch_Size,
             #shuffle=True,
             num_workers=default_config.Num_Workers,
             pin_memory=True,
-            #sampler=train_sampler,
+            sampler=train_sampler,
             drop_last=True)
-        test_dataloader = torch.utils.data.DataLoader(
-            val_dataset,
+        test_dataloader = DataLoader(
+            test_dataset,
             batch_size=default_config.Batch_Size_Test,
             #shuffle=False,
-            num_workers=default_config.Num_Workers,
-            pin_memory=True,
-            #sampler=val_sampler,
-            drop_last=False)
+            #num_workers=default_config.Num_Workers,
+            #pin_memory=True,
+            sampler=test_sampler,
+            collate_fn=collate_fn,
+            drop_last=False
+            )
 
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
         test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
@@ -145,7 +152,7 @@ def main():
             for x in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
                 # model prediction
                 with torch.no_grad():
-                    _ = model(x.to(device))
+                    _ = model(x.to("cuda:1"))
                 # get intermediate layer outputs
                 for k, v in zip(train_outputs.keys(), outputs):
                     train_outputs[k].append(v.cpu().detach())
@@ -182,10 +189,14 @@ def main():
         gt_list = []
         gt_mask_list = []
         test_imgs = []
+        anomaly_point_lists=[]
 
         # extract test set features
-        for x in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
-            test_imgs.extend(x.cpu().detach().numpy())
+        for batch in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
+            x=batch[0]
+            anomaly_points=batch[1]
+            test_imgs.extend(x)
+            anomaly_point_lists.extend(anomaly_points)
             #gt_list.extend(y.cpu().detach().numpy())
             #gt_mask_list.extend(mask.cpu().detach().numpy())
             # model prediction
@@ -221,12 +232,11 @@ def main():
 
         # upsample
         dist_list = torch.tensor(dist_list)
-        score_map = F.interpolate(dist_list.unsqueeze(1), size=x.size(2), mode='bilinear',
-                                  align_corners=False).squeeze().numpy()
+        score_map = F.interpolate(dist_list.unsqueeze(1), size=x.size(2), mode='bilinear',align_corners=False).squeeze().numpy()
         
         # apply gaussian smoothing on the score map
         for i in range(score_map.shape[0]):
-            score_map[i] = gaussian_filter(score_map[i], sigma=4)
+            score_map[i] = gaussian_filter(score_map[i], sigma=1)
         
         # Normalization
         max_score = score_map.max()
@@ -259,7 +269,7 @@ def main():
         #fig_pixel_rocauc.plot(fpr, tpr, label='%s ROCAUC: %.3f' % (class_name, per_pixel_rocauc))
         save_dir = args.save_path + '/' + f'pictures_{args.arch}'
         os.makedirs(save_dir, exist_ok=True)
-        plot_fig(test_imgs, scores, save_dir, class_name)
+        plot_fig(test_imgs, scores, anomaly_point_lists,save_dir, class_name)
 
     """print('Average ROCAUC: %.3f' % np.mean(total_roc_auc))
     fig_img_rocauc.title.set_text('Average image ROCAUC: %.3f' % np.mean(total_roc_auc))
@@ -273,22 +283,33 @@ def main():
     fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
 
 
-def plot_fig(test_img, scores, save_dir, class_name):
+def plot_fig(test_img, scores,anomaly_point_lists, save_dir, class_name):
     num = len(scores)
     vmax = scores.max() * 255.
     vmin = scores.min() * 255.
     for i in range(num):
+        point=anomaly_point_lists[i]
         img = test_img[i]
+        img=img/255
+        img=img.permute(1, 2, 0)
         #img = denormalization(img)
         #gt = gts[i].transpose(1, 2, 0).squeeze()
+        shape=decode_labelme_shape(point)
         heat_map = scores[i] * 255
         mask = scores[i]
-        threshold=0.8
+        threshold=(mask.max()+mask.min())/2*1.1
         mask[mask > threshold] = 1
         mask[mask <= threshold] = 0
         kernel = morphology.disk(4)
         mask = morphology.opening(mask, kernel)
         mask *= 255
+        _, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
+        res = cv2.equalizeHist(cv2.convertScaleAbs(labels))
+
+        yinjiao_mask = cv2.fillPoly(np.zeros_like(img), [roi_contour], 255)
+        yinjiao_region = cv2.bitwise_and(img, yinjiao_mask)
+
+
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
         fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
@@ -296,6 +317,10 @@ def plot_fig(test_img, scores, save_dir, class_name):
         for ax_i in ax_img:
             ax_i.axes.xaxis.set_visible(False)
             ax_i.axes.yaxis.set_visible(False)
+        img=(255*img.numpy()).astype(np.uint8)
+        img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)  
+        #cv2.fillPoly(img, [np.array(shape,dtype=np.int32)],255)
+        cv2.rectangle(img,shape[0],shape[1],(0,255,0),-1)
         ax_img[0].imshow(img)
         ax_img[0].title.set_text('Image')
         #ax_img[1].imshow(gt, cmap='gray')
