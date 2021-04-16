@@ -304,7 +304,7 @@ def segment_image(img,mask,save_image_dir,class_name,image_id,step):
                     x=224
                 if y>(224-step):
                     y=224
-                croped=img[x:x+w,y:y+h]
+                croped=img[x-w:x+w,y:y+h]
             else:
                 croped=img[x-step:x+w+step,y-step:y+h+step]
         else:
@@ -332,6 +332,15 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         mask = morphology.opening(mask, kernel)
         mask *= 255
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
+        mask_contour = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        rect = cv2.boundingRect(mask_contour[0])
+        x1, y1, x2, y2 = rect
+        crop_region = img[y1:y2,x1:x2]
+        print(rect)
+        contour_mask = cv2.fillPoly(np.zeros_like(img), [mask], 255)
+        foreground = cv2.bitwise_and(img, contour_mask)
+        crop_region_pure_foreground = foreground[y1:y2,x1:x2]
+
         fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
@@ -377,6 +386,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         save_file_dir=os.path.join(save_picture_dir,class_name+ '_{}'.format(i)+".jpg")
         fig_img.savefig(save_file_dir, dpi=100)
         segment_image(img_for_segment,mask,save_image_dir,class_name,i,5)
+        segment_heat_map*=255/segment_heat_map.max()
         segment_image(segment_heat_map,mask,save_heatmap_dir,class_name,i,5)
         plt.close()
 
