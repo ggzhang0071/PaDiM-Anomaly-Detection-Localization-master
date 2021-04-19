@@ -42,8 +42,8 @@ def parse_args():
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='./kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
-    parser.add_argument('--train_num_samples', type=int, default=50)
-    parser.add_argument('--test_num_samples', type=int, default=50)
+    parser.add_argument('--train_num_samples', type=int, default=20)
+    parser.add_argument('--test_num_samples', type=int, default=20)
     return parser.parse_args()
 
 def collate_fn(batch):
@@ -106,7 +106,8 @@ def main():
     ])
 
    ###
-    product_class=['0808QFN-16L', 'DFN-002A', 'QFN-3X3-16L', '0708DFN-8L', 'DFN-5X6-T-8L', '0420QFN-5X6-8L', '1101QFN-40L', '0713DFN-2X3-8L', 'DFN-5X6-8L', '1129QFN-4X4-24L']
+    #product_class=['0808QFN-16L', 'DFN-002A', 'QFN-3X3-16L', '0708DFN-8L', 'DFN-5X6-T-8L', '0420QFN-5X6-8L', '1101QFN-40L', '0713DFN-2X3-8L', 'DFN-5X6-8L', '1129QFN-4X4-24L']
+    product_class=['0713DFN-2X3-8L']
     
     file_path='assets_new_new/data/2021-03-05'
     train_file_name='train.json'
@@ -270,12 +271,10 @@ def main():
         #fig_pixel_rocauc.plot(fpr, tpr, label='%s ROCAUC: %.3f' % (class_name, per_pixel_rocauc))
         save_picture_dir = args.save_path + '/' + f'pictures_{args.arch}'
         save_image_dir=args.save_path + '/' + f'segment_image_result_{args.arch}'
-        save_heatmap_dir=args.save_path + '/' + f'segment_heatmap_result_{args.arch}'
         
         os.makedirs(save_picture_dir, exist_ok=True)
         os.makedirs(save_image_dir, exist_ok=True)
-        os.makedirs(save_heatmap_dir, exist_ok=True)
-        plot_fig(test_imgs, scores, anomaly_point_lists,save_picture_dir,save_image_dir,save_heatmap_dir,class_name)
+        plot_fig(test_imgs, scores, anomaly_point_lists,save_picture_dir,save_image_dir,class_name)
 
     """print('Average ROCAUC: %.3f' % np.mean(total_roc_auc))
     fig_img_rocauc.title.set_text('Average image ROCAUC: %.3f' % np.mean(total_roc_auc))
@@ -285,34 +284,41 @@ def main():
     fig_pixel_rocauc.title.set_text('Average pixel ROCAUC: %.3f' % np.mean(total_pixel_roc_auc))
     fig_pixel_rocauc.legend(loc="lower right")"""
 
-    fig.tight_layout()
-    fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
+    #fig.tight_layout()
+    #fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
 
 def segment_image(img,mask,save_image_dir,class_name,image_id,step):
-    _, labels, stats, centroids = cv2.connectedComponentsWithStats(mask.astype("uint8"))
-    for i in range(len(stats)):
-        x,y,w,h,area=stats[i]
-        if 16<area<(224-1)*(224-1)*0.8:
-            croped = img[x:x+w,y:y+h]
-        elif area<=16:
-            if x<step or y<step or x>224-step or y>224-step:
-                if x<step:
-                    x=0
-                if y<step:
-                    y=0
-                if x>(224-step):
-                    x=224
-                if y>(224-step):
-                    y=224
-                croped=img[x-w:x+w,y:y+h]
-            else:
-                croped=img[x-step:x+w+step,y-step:y+h+step]
-        else:
-            continue
+    mask=mask.astype("uint8")
+    mask_contour,hierarchy  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for i, cnt in enumerate(mask_contour):
+        contour_mask = cv2.fillPoly(np.zeros_like(img), [cnt], (255,255,255))
+        foreground = cv2.bitwise_and(img, contour_mask)
+        bounding_box=cv2.boundingRect(cnt)
+        x, y, w, h = bounding_box
+        #crop_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
+        stepx=int(w/4)
+        stepy=int(h/4)
+        # expand the crop range
+        if x<stepx or y<stepy or x>224-stepx or y>224-stepy:
+            if x<=stepx:
+                stepx=x
+            if y<stepy:
+                stepy=y
+            if x>(224-w-stepx):
+                x=224-w-stepx
+            if y>(224-h-stepy):
+                y=224-h-stepy
+        #crop_region=img[y-stepy:y+h+stepy,x-stepx:x+w+stepx]
+        crop_region_pure_foreground = foreground[y-stepy:y+h+stepy,x-stepx:x+w+stepx]
+        fig=plt.figure()
+        plt.imshow(crop_region_pure_foreground)
         save_file_dir=os.path.join(save_image_dir,class_name+"_"+str(image_id)+ "_"+str(i)+".jpg")
-        cv2.imwrite(save_file_dir,croped)
+        plt.savefig(save_file_dir)
+        plt.close(fig)
 
-def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_dir,save_heatmap_dir,class_name):
+        
+
+def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name):
     num = len(scores)
     vmax = scores.max() * 255.
     vmin = scores.min() * 255.
@@ -323,7 +329,6 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         #img = denormalization(img)
         #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
-        segment_heat_map=copy.deepcopy(heat_map)
         mask = scores[i]
         threshold=(mask.max()+mask.min())/2*0.8
         mask[mask > threshold] = 1
@@ -332,15 +337,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         mask = morphology.opening(mask, kernel)
         mask *= 255
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
-        mask_contour = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        rect = cv2.boundingRect(mask_contour[0])
-        x1, y1, x2, y2 = rect
-        crop_region = img[y1:y2,x1:x2]
-        print(rect)
-        contour_mask = cv2.fillPoly(np.zeros_like(img), [mask], 255)
-        foreground = cv2.bitwise_and(img, contour_mask)
-        crop_region_pure_foreground = foreground[y1:y2,x1:x2]
-
+        
         fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
@@ -354,7 +351,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         ax_img[0].title.set_text('Image')
         points=anomaly_point_lists[i]
         shapes=[]
-        for point  in points:
+        for point in points:
             shape=(decode_labelme_shape(point))
             cv2.rectangle(img,(int(shape[0][0]),int(shape[0][1])),(int(shape[1][0]),int(shape[1][1])),(0,255,0),2)
         ax_img[1].imshow(img)
@@ -385,10 +382,8 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         cb.set_label('Anomaly Score', fontdict=font)
         save_file_dir=os.path.join(save_picture_dir,class_name+ '_{}'.format(i)+".jpg")
         fig_img.savefig(save_file_dir, dpi=100)
-        segment_image(img_for_segment,mask,save_image_dir,class_name,i,5)
-        segment_heat_map*=255/segment_heat_map.max()
-        segment_image(segment_heat_map,mask,save_heatmap_dir,class_name,i,5)
         plt.close()
+        segment_image(img_for_segment,mask,save_image_dir,class_name,i,5)
 
 
 def denormalization(x):
