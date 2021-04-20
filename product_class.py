@@ -45,7 +45,6 @@ if __name__=="__main__":
     for file_name in files:
         product_class(file_name)"""
 
-        
     import sys
     sys.path.append("./data_loader")
     from lib.common_lib import DataManager

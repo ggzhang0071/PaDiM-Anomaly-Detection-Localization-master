@@ -14,10 +14,9 @@ def find_val_test_iamges(json_file,product_id_lists,product_classification):
                 elif  product_id in product_id_lists:
                     if  product_id not in product_classification["train_json_info"]:
                         product_classification["train_json_info"][product_id]=[]
-                    product_classification["train_json_info"][product_id].append(dataset_info)
+                    product_classification["train_json_info"][product_id].append(data_info)
         return product_id_lists,product_classification, class_dict_info
 
-product_id_0305=[]
 if  __name__== "__main__":
     val_json='assets/data/2021-03-05/val.json'
     test_json='assets/data/2021-03-05/test.json'
@@ -27,6 +26,7 @@ if  __name__== "__main__":
     for file_name in file_lists:
         product_id_lists,product_classification,class_dict_info =find_val_test_iamges(file_name,product_id_lists,product_classification)
     file_path='assets_new_new/data/2021-03-05'
+    print(product_id_lists)
     for product_id in product_id_lists:
         file_path_new=file_path+"/"+product_id
         if not os.path.exists(file_path_new):

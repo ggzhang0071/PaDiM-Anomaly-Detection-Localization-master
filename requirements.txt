@@ -2,3 +2,4 @@ torch==1.5.0
 pathlib2
 jupyter
 jupyterlab
+torchvision==0.4.0
