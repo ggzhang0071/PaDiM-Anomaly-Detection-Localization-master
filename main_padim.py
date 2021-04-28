@@ -37,14 +37,14 @@ device = torch.device('cuda:0,1,2,3' if use_cuda else 'cpu')
 
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
-    #parser.add_argument('--data_path', type=str, default='D:/dataset/mvtec_anomaly_detection')
-    parser.add_argument('--data_path', type=str, default='D:/dataset/kangqiang_anomaly_detection')
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='./kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
     parser.add_argument('--train_num_samples', type=int, default=2)
     parser.add_argument('--test_num_samples', type=int, default=2)
     parser.add_argument('--product_class', type=str, default='0808QFN-16L')
+    parser.add_argument('--threshold_coefficient', type=float, default='0.8')
+
 
     return parser.parse_args()
 
@@ -122,11 +122,19 @@ def main():
             image_data_root=default_config.Image_Data_Root,
             transform=val_transform,
             )  # use real data as validation
-        train_sampler=RandomSampler(train_dataset,num_samples=args.train_num_samples, replacement=True)
-        test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)
+        if args.train_num_samples==0:
+            train_sampler=None
+        else:
+           train_sampler=RandomSampler(train_dataset,num_samples=args.train_num_samples, replacement=True)
+
+        if args.test_num_samples==0:
+            test_sampler=None
+        else:
+            test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)
+
         train_dataloader =DataLoader(train_dataset,
         batch_size=default_config.Batch_Size,
-            #shuffle=True,
+            shuffle=train_sampler is None,
             num_workers=default_config.Num_Workers,
             pin_memory=True,
             sampler=train_sampler,
@@ -309,12 +317,13 @@ def segment_image(img,mask,save_image_dir,class_name,image_id,step):
                 
         crop_region=img[y:y+h,x:x+w] 
         crop_region_pure_foreground = foreground[y:y+h,x:x+w] 
-        for k in range(h):
+        """for k in range(h):
             for j in range(w):
                 if np.count_nonzero(crop_region_pure_foreground[k,j,:])==0:
-                    crop_region_pure_foreground[k,j,:]=crop_region[k,j,:]
+                    crop_region_pure_foreground[k,j,:]=crop_region[k,j,:]"""
         fig=plt.figure()
         plt.imshow(crop_region_pure_foreground)
+        plt.axis("off")
         save_file_dir=os.path.join(save_image_dir,class_name+"_"+str(image_id)+ "_"+str(i)+".jpg")
         plt.savefig(save_file_dir)
         plt.close(fig)
@@ -333,7 +342,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
         mask = scores[i]
-        threshold=(mask.max()+mask.min())/2*0.8
+        threshold=(mask.max()+mask.min())/2*args.threshold_coefficient
         mask[mask > threshold] = 1
         mask[mask <= threshold] = 0
         kernel = morphology.disk(4)
@@ -355,8 +364,8 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         points=anomaly_point_lists[i]
         shapes=[]
         for point in points:
-            shape=(decode_labelme_shape(point))
-            cv2.rectangle(img,(int(shape[0][0]),int(shape[0][1])),(int(shape[1][0]),int(shape[1][1])),(0,255,0),2)
+            shape=np.array(decode_labelme_shape(point))
+            cv2.rectangle(img,(int(shape[:,0].min()),int(shape[:,1].min())),(int(shape[:,0].max()),int(shape[:,1].max())),(0,255,0),2)
         ax_img[1].imshow(img)
         #ax_img[1].imshow(gt, cmap='gray')
         ax_img[1].title.set_text('GroundTruth')
