@@ -10,7 +10,5 @@ nvidia-docker run --privileged=true  --workdir /git --name "padim1"  -e DISPLAY 
 $img sleep infinity
 
 
-scp zhanggege@192.168.10.15:/disk/zhanggege/nfs_12/PaDiM-Anomaly-Detection-Localization-master/kangqiang_result/segment_images.tar.gz  .
-
 
 

@@ -12,7 +12,7 @@ from sklearn.metrics import precision_recall_curve
 from sklearn.covariance import LedoitWolf
 from scipy.spatial.distance import mahalanobis
 from scipy.ndimage import gaussian_filter
-from dataset  import JsonDataset
+from dataset import JsonDataset, collate_fn
 from skimage import morphology
 from albumentations.augmentations import transforms
 from albumentations.core.composition import Compose
@@ -37,20 +37,14 @@ device = torch.device('cuda:0,1,2,3' if use_cuda else 'cpu')
 
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
-    #parser.add_argument('--data_path', type=str, default='D:/dataset/mvtec_anomaly_detection')
-    parser.add_argument('--data_path', type=str, default='D:/dataset/kangqiang_anomaly_detection')
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='./kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
-    parser.add_argument('--train_num_samples', type=int, default=20)
-    parser.add_argument('--test_num_samples', type=int, default=20)
+    parser.add_argument('--train_num_samples', type=int, default=0)
+    parser.add_argument('--test_num_samples', type=int, default=0)
+    parser.add_argument('--product_class', type=str, default='0808QFN-16L')
+    parser.add_argument('--threshold_coefficient', type=float, default='0.8')
     return parser.parse_args()
-
-def collate_fn(batch):
-    imgs=[item[0] for item in batch]
-    points = [item[1] for item in batch]
-    imgs=torch.from_numpy(np.array(imgs)) 
-    return [imgs, points]
 
 def main():
     args = parse_args()
@@ -104,15 +98,11 @@ def main():
     val_transform = Compose([
         transforms.Resize(224,224),
     ])
-
-   ###
-    #product_class=['0808QFN-16L', 'DFN-002A', 'QFN-3X3-16L', '0708DFN-8L', 'DFN-5X6-T-8L', '0420QFN-5X6-8L', '1101QFN-40L', '0713DFN-2X3-8L', 'DFN-5X6-8L', '1129QFN-4X4-24L']
-    product_class=['0713DFN-2X3-8L']
     
     file_path='assets_new_new/data/2021-03-05'
     train_file_name='train.json'
     val_file_name="test.json"
- 
+    product_class=[args.product_class]
     for class_name in product_class:
         train_dataset = JsonDataset(
             json_file=file_path+"/"+class_name+"/"+train_file_name,
@@ -124,29 +114,37 @@ def main():
             image_data_root=default_config.Image_Data_Root,
             transform=val_transform,
             )  # use real data as validation
-        train_sampler=RandomSampler(train_dataset,num_samples=args.train_num_samples, replacement=True)
-        test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)
+        if args.train_num_samples==0:
+            train_sampler=None
+        else:
+           train_sampler=RandomSampler(train_dataset,num_samples=args.train_num_samples, replacement=True)
+
+        if args.test_num_samples==0:
+            test_sampler=None
+        else:
+            test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)
+
         train_dataloader =DataLoader(train_dataset,
         batch_size=default_config.Batch_Size,
             #shuffle=True,
             num_workers=default_config.Num_Workers,
             pin_memory=True,
-            sampler=train_sampler,
-            drop_last=True)
+            #sampler=False,
+            #drop_last=True
+            )
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=default_config.Batch_Size_Test,
-            #shuffle=False,
-            #num_workers=default_config.Num_Workers,
-            #pin_memory=True,
-            sampler=test_sampler,
+            #shuffle=True,
+            num_workers=default_config.Num_Workers,
+            pin_memory=True,
+            #sampler=test_sampler,
             collate_fn=collate_fn,
-            drop_last=False
+            #drop_last=False
             )
 
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
         test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
-        #test 
 
         # extract train set features
         train_feature_filepath = os.path.join(args.save_path, 'temp_%s' % args.arch, 'train_%s.pkl' % class_name)
@@ -194,9 +192,7 @@ def main():
         anomaly_point_lists=[]
 
         # extract test set features
-        for batch in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
-            x=batch[0]
-            anomaly_points=batch[1]
+        for x, _, anomaly_points, loc_list in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
             test_imgs.extend(x)
             anomaly_point_lists.extend(anomaly_points)
             #gt_list.extend(y.cpu().detach().numpy())
@@ -275,7 +271,7 @@ def main():
         
         os.makedirs(save_picture_dir, exist_ok=True)
         os.makedirs(save_image_dir, exist_ok=True)
-        plot_fig(test_imgs, scores, anomaly_point_lists,save_picture_dir,save_image_dir,class_name)
+        plot_fig(test_imgs, scores, anomaly_point_lists,save_picture_dir,save_image_dir,class_name,args.threshold_coefficient,loc_list)
 
     """print('Average ROCAUC: %.3f' % np.mean(total_roc_auc))
     fig_img_rocauc.title.set_text('Average image ROCAUC: %.3f' % np.mean(total_roc_auc))
@@ -288,7 +284,7 @@ def main():
     #fig.tight_layout()
     #fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
 
-def segment_image(img,mask,save_image_dir,class_name,image_id,step):
+def segment_image(img,mask,save_image_dir,class_name,image_name,step=5):
     mask=mask.astype("uint8")
     mask_contour,hierarchy  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     for i, cnt in enumerate(mask_contour):
@@ -300,7 +296,7 @@ def segment_image(img,mask,save_image_dir,class_name,image_id,step):
         stepx=int(w/4)
         stepy=int(h/4)
         # expand the crop range
-        if x<stepx or y<stepy or x>224-stepx or y>224-stepy:
+        """if x<stepx or y<stepy or x>224-stepx or y>224-stepy:
             if x<=stepx:
                 stepx=x
             if y<stepy:
@@ -308,18 +304,25 @@ def segment_image(img,mask,save_image_dir,class_name,image_id,step):
             if x>(224-w-stepx):
                 x=224-w-stepx
             if y>(224-h-stepy):
-                y=224-h-stepy
-        #crop_region=img[y-stepy:y+h+stepy,x-stepx:x+w+stepx]
-        crop_region_pure_foreground = foreground[y-stepy:y+h+stepy,x-stepx:x+w+stepx]
+                y=224-h-stepy"""
+                
+        crop_region=img[y:y+h,x:x+w] 
+        crop_region_pure_foreground = foreground[y:y+h,x:x+w] 
+        """for k in range(h):
+            for j in range(w):
+                if np.count_nonzero(crop_region_pure_foreground[k,j,:])==0:
+                    crop_region_pure_foreground[k,j,:]=crop_region[k,j,:]"""
         fig=plt.figure()
         plt.imshow(crop_region_pure_foreground)
-        save_file_dir=os.path.join(save_image_dir,class_name+"_"+str(image_id)+ "_"+str(i)+".jpg")
-        plt.savefig(save_file_dir)
+        plt.axis("off")
+        save_file_name=os.path.join(save_image_dir,image_name+"_"+str(i)+".jpg")
+        save_file_dir=os.path.split(save_file_name)[0]
+        if not os.path.exists(save_file_dir):
+            os.makedirs(save_file_dir)
+        plt.savefig(save_file_name)
         plt.close(fig)
 
-        
-
-def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name):
+def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name):
     num = len(scores)
     vmax = scores.max() * 255.
     vmin = scores.min() * 255.
@@ -331,7 +334,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
         mask = scores[i]
-        threshold=(mask.max()+mask.min())/2*0.8
+        threshold=(mask.max()+mask.min())/2*threshold_coefficient
         mask[mask > threshold] = 1
         mask[mask <= threshold] = 0
         kernel = morphology.disk(4)
@@ -352,11 +355,11 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         ax_img[0].title.set_text('Image')
         points=anomaly_point_lists[i]
         shapes=[]
+        ax_img[1].imshow(img,cmap="gray") 
         for point in points:
-            shape=(decode_labelme_shape(point))
-            cv2.rectangle(img,(int(shape[0][0]),int(shape[0][1])),(int(shape[1][0]),int(shape[1][1])),(0,255,0),2)
-        ax_img[1].imshow(img)
-        #ax_img[1].imshow(gt, cmap='gray')
+            shape=np.array(decode_labelme_shape(point))
+            x1,y1,x2,y2 = shape[:,0].min(), shape[:,1].min(), shape[:,0].max(), shape[:,1].max()
+            ax_img[1].plot([x1,x1,x2,x2,x1], [y1, y2, y2, y1, y1])
         ax_img[1].title.set_text('GroundTruth')
         ax = ax_img[1].imshow(heat_map, cmap='jet', norm=norm)
         ax_img[1].imshow(img, cmap='gray', interpolation='none')
@@ -384,7 +387,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         save_file_dir=os.path.join(save_picture_dir,class_name+ '_{}'.format(i)+".jpg")
         fig_img.savefig(save_file_dir, dpi=100)
         plt.close()
-        segment_image(img_for_segment,mask,save_image_dir,class_name,i,5)
+        segment_image(img_for_segment,mask,save_image_dir,class_name,image_name[i])
 
 
 def denormalization(x):

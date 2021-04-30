@@ -1,3 +1,4 @@
+# crop image based on the annotation information and save the image and label information
 from common_lib import DataManager
 from dataset  import JsonDataset
 from common_lib.tools.coding_related import decode_distribution
@@ -36,7 +37,7 @@ for data in data_list:
     for i, rec in enumerate(data):
         image_name=rec['info']['image_path']
         image_dir,image_name_part=os.path.split(image_name)
-        print(image_dir,image_name_part)
+        print(i)
         img = cv2.imread(os.path.join(image_data_root,image_name))[...,::-1]
         assert img is not None, rec
         for p,inst in enumerate(rec['instances']):

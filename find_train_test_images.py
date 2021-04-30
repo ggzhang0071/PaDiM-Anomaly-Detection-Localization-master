@@ -1,3 +1,4 @@
+# split data for padim 
 import os,json
 def find_val_test_iamges(json_file,product_id_lists,product_classification):
     with open(json_file,"r") as fid:
@@ -20,12 +21,12 @@ def find_val_test_iamges(json_file,product_id_lists,product_classification):
 if  __name__== "__main__":
     val_json='assets/data/2021-03-05/val.json'
     test_json='assets/data/2021-03-05/test.json'
+    file_path='assets_new_new/data/2021-03-05'
     product_classification={"train_json_info":{},"test_json_info":{}}
     product_id_lists=[]
     file_lists=[val_json,test_json]
     for file_name in file_lists:
         product_id_lists,product_classification,class_dict_info =find_val_test_iamges(file_name,product_id_lists,product_classification)
-    file_path='assets_new_new/data/2021-03-05'
     print(product_id_lists)
     for product_id in product_id_lists:
         file_path_new=file_path+"/"+product_id
