@@ -32,26 +32,30 @@ json_file_list=["train.json","val.json","test.json"]
 save_file_list=["train.txt","val.txt","test.txt"]
 data_list=[data1,data2,data3]
 
-for data in data_list:
+for k, data in enumerate(data_list):
     anomaly_image_path_label_list=[]
     for i, rec in enumerate(data):
         image_name=rec['info']['image_path']
         image_dir,image_name_part=os.path.split(image_name)
-        print(i)
+        if i%50==0:
+            print("the current image number is {},  the total number is {}".format(i,len(data)))
         img = cv2.imread(os.path.join(image_data_root,image_name))[...,::-1]
         assert img is not None, rec
         for p,inst in enumerate(rec['instances']):
-            shapes = np.array(decode_labelme_shape(inst['points']))
-            x1,y1,x2,y2 = int(shapes[:,0].min()), int(shapes[:,1].min()), int(shapes[:,0].max()), int(shapes[:,1].max())
-            crop_img=img[y1:y2,x1:x2]
-            plt.imshow(crop_img) 
             save_dir=os.path.join(save_image_root, image_dir)
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
             save_new_image_name=os.path.join(save_dir, os.path.splitext(image_name_part)[0]+"_"+str(p)+".jpg")
+            """if os.path.exists(save_new_image_name):
+                continue"""
+            shapes = np.array(decode_labelme_shape(inst['points']))
+            x1,y1,x2,y2 = int(shapes[:,0].min()), int(shapes[:,1].min()), int(shapes[:,0].max()), int(shapes[:,1].max())
+            crop_img=img[y1:y2,x1:x2]
+            plt.imshow(crop_img) 
+            # save new images
             plt.savefig(save_new_image_name)    
             anomaly_image_path_label_list.append([save_new_image_name,data1.class_dict])
-    with open(os.path.join(json_file,save_folder,save_file_list[i]),"w+") as fid:
+    with open(os.path.join(json_file,save_folder,save_file_list[k]),"w+") as fid:
         fid.writelines([k[0]+" "+str(k[1])+"\n" for k in anomaly_image_path_label_list])
         fid.close()
       
