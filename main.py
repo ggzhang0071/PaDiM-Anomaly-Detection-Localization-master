@@ -334,7 +334,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
         mask = scores[i]
-        threshold=(mask.max()+mask.min())/2*threshold_coefficient
+        threshold=(mask.max()+mask.min())/2*args.threshold_coefficient
         mask[mask > threshold] = 1
         mask[mask <= threshold] = 0
         kernel = morphology.disk(4)
