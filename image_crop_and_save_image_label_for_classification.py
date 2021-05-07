@@ -21,18 +21,8 @@ def convert_NG_label(distribution,class_dict):
             if NG_type[-1]==class_num["class_name"]:
                   return class_num["class_id"]-4
 #image_data_root = '/workspace/dataSet/raw/unsupervised-learning/kangqiang/'
-image_data_root="/git/dataSet/raw/unsupervised-learning/kangqiang/"
-data1 = DataManager.from_json('assets_new_new/data/2021-03-05/json_for_classification/train.json')
-data2 = DataManager.from_json('assets_new_new/data/2021-03-05/json_for_classification/val.json')
-data3 = DataManager.from_json('assets_new_new/data/2021-03-05/json_for_classification/test.json')
-save_image_root="/git/PaDiM-master/kangqiang_result/croped_images"
-json_file="/git/PaDiM-master/assets_new_new/data/2021-03-05"
-save_folder="json_for_classification"
-json_file_list=["train.json","val.json","test.json"]
-save_file_list=["train.txt","val.txt","test.txt"]
-data_list=[data1,data2,data3]
 
-for k, data in enumerate(data_list):
+def image_crop(data):
     anomaly_image_path_label_list=[]
     for i, rec in enumerate(data):
         image_name=rec['info']['image_path']
@@ -46,16 +36,43 @@ for k, data in enumerate(data_list):
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
             save_new_image_name=os.path.join(save_dir, os.path.splitext(image_name_part)[0]+"_"+str(p)+".jpg")
-            """if os.path.exists(save_new_image_name):
-                continue"""
             shapes = np.array(decode_labelme_shape(inst['points']))
             x1,y1,x2,y2 = int(shapes[:,0].min()), int(shapes[:,1].min()), int(shapes[:,0].max()), int(shapes[:,1].max())
             crop_img=img[y1:y2,x1:x2]
             plt.imshow(crop_img) 
             # save new images
             plt.savefig(save_new_image_name)    
-            anomaly_image_path_label_list.append([save_new_image_name,data1.class_dict])
-    with open(os.path.join(json_file,save_folder,save_file_list[k]),"w+") as fid:
-        fid.writelines([k[0]+" "+str(k[1])+"\n" for k in anomaly_image_path_label_list])
-        fid.close()
+            anomaly_image_path_label_list.append([save_new_image_name,convert_NG_label(rec['instances'][0]['distribution'],data1.class_dict)])
+    return anomaly_image_path_label_list
+
+def func(listTemp, n):
+    for i in range(0, len(listTemp), n):
+        yield listTemp[i:i + n]
+
+if __name__ == '__main__':
+    from multiprocessing import Pool
+    image_data_root="/git/dataSet/raw/unsupervised-learning/kangqiang/"
+    data1 = DataManager.from_json('assets_new_new/data/2021-03-05/json_for_classification/train.json')
+    data2 = DataManager.from_json('assets_new_new/data/2021-03-05/json_for_classification/val.json')
+    data3 = DataManager.from_json('assets_new_new/data/2021-03-05/json_for_classification/test.json')
+    save_image_root="/git/PaDiM-master/kangqiang_result/croped_images"
+    json_file="/git/PaDiM-master/assets_new_new/data/2021-03-05"
+    save_folder="json_for_classification"
+    json_file_list=["val.json","train.json","test.json"]
+    save_file_list=["val.txt","train.txt","test.txt"]
+    data_list=[data1,data2,data3]
+    cpu_num=24
+    for k, data in enumerate(data_list):
+        with Pool(cpu_num) as p:
+            anomaly_image_path_label_list=p.map(image_crop, list(func(data, cpu_num)))
+        print(len(anomaly_image_path_label_list[0]))
+        with open(os.path.join(json_file,save_folder,save_file_list[k]),"w+") as fid:
+            num=0
+            for i in  range(len(anomaly_image_path_label_list)):
+                for j in range(len(anomaly_image_path_label_list[i])):
+                    num+=1
+                    fid.writelines(anomaly_image_path_label_list[i][j][0]+" "+str(anomaly_image_path_label_list[i][j][1])+"\n")
+    
+
+
       
