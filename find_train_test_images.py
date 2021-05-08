@@ -34,10 +34,8 @@ if  __name__== "__main__":
             os.makedirs(file_path_new)
         with open(file_path_new+"/"+"test.json", 'w+',encoding="utf8") as fid:
             json.dump({"record":product_classification["test_json_info"][product_id],"class_dict":class_dict_info},fid,indent=4)
-            fid.close()
         with open(file_path_new+"/"+"train.json", 'w+',encoding="utf8") as fid:
             json.dump({"record":product_classification["train_json_info"][product_id],"class_dict":class_dict_info},fid,indent=4) 
-            fid.close()
 
         
     

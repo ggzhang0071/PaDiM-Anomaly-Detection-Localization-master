@@ -29,11 +29,12 @@ classes = config['classes']
 # convert classes key from string to int
 classes = {int(key):classes[key] for key in classes}
 #device_id = config['device_id']
-train_path = config['train_path']
-val_path = config['val_path']
-test_path = config['test_path']
-save_path = config['save_path']
-
+json_dir=config['json_dir']
+train_path = os.path.join(json_dir,config['tain_file'])
+val_path=os.path.join(json_dir,config['val_file']) 
+test_path=os.path.join(json_dir,config['test_file'])
+image_data_root=config['image_data_root']
+save_path=config['save_path']
 if not os.path.exists(save_path):
     os.makedirs(save_path)
 
@@ -152,6 +153,9 @@ def evaluate(model, loader):
     y_pred = np.array(y_pred)
     # ROC AUC score
     # if binary
+    # fill the Nan by 1000
+    if np.isnan(y_softmax).any():
+        y_softmax=np.nan_to_num(y_softmax,nan=1000)
     if class_num == 2:
         roc_auc = metrics.roc_auc_score(y, y_softmax[:, 1])
     else:
@@ -199,14 +203,13 @@ def main(train_path,val_path,image_data_root, checkpoint_path=None):
     # define main and regulization loss functions
     main_criterion = nn.CrossEntropyLoss()
     regu_criterion = None #AMSoftmax(embedding_dim, class_num)
-
     # load data
 
     trainset = CustomDataset(train_path,image_data_root,transform=transform_train)
     valset = CustomDataset(val_path,image_data_root,transform=transform_test)
 
-    trainloader = data.DataLoader(trainset,batch_size=batch_size,shuffle=True,num_workers=4)
-    valloader = data.DataLoader(valset,batch_size=batch_size,shuffle=True,num_workers=4)
+    trainloader = data.DataLoader(trainset,batch_size=batch_size,shuffle=True,num_workers=4,pin_memory=True)
+    valloader = data.DataLoader(valset,batch_size=batch_size,shuffle=True,num_workers=4,pin_memory=True)
 
     # optimizer
     optimizer = optim.SGD(model.parameters(), lr=args['lr'], momentum=args['momentum'], weight_decay=args['weight_decay'])
@@ -266,19 +269,15 @@ def main(train_path,val_path,image_data_root, checkpoint_path=None):
 
 
 if __name__ == '__main__':
-    file_dir="/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification"
-    image_data_root='kangqiang_result/croped_images'
-    train_path=os.path.join(file_dir,"train.txt")
-    val_path=os.path.join(file_dir,"val.txt")
-    test_path=os.path.join(file_dir,"test.txt")
-    os.environ["CUDA_VISIBLE_DEVICES"]="2,3,1"
+
+    os.environ["CUDA_VISIBLE_DEVICES"]="2,3"
     main(train_path,val_path,image_data_root)
 
     # evaluate best model on test set
     testset = CustomDataset(test_path,image_data_root,transform=transform_test)
-    testloader = data.DataLoader(testset,image_data_root, batch_size=batch_size, shuffle=True, num_workers=4)
+    testloader = data.DataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=4,pin_memory=True)
 
-    model.load_state_dict(torch.load(os.path.join(save_path, 'best_model.pth')))
+    #model.load_state_dict(torch.load(os.path.join(save_path, 'best_model.pth')))
     model.eval()
 
     roc_auc, precision, recall, df = evaluate(model, testloader)
