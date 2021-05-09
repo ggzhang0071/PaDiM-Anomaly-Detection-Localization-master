@@ -155,7 +155,7 @@ def evaluate(model, loader):
     # if binary
     # fill the Nan by 1000
     if np.isnan(y_softmax).any():
-        y_softmax=np.nan_to_num(y_softmax,nan=1000)
+        y_softmax=np.nan_to_num(y_softmax,nan=0)
     if class_num == 2:
         roc_auc = metrics.roc_auc_score(y, y_softmax[:, 1])
     else:

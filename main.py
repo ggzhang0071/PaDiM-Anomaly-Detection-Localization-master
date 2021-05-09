@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from  coding_related import decode_labelme_shape
 from config import default_config
+from skimage.segmentation import watershed
 import sys
 import  copy
 import torch
@@ -321,6 +322,12 @@ def segment_image(img,mask,save_image_dir,class_name,image_name,step=5):
             os.makedirs(save_file_dir)
         plt.savefig(save_file_name)
         plt.close(fig)
+def heatmap_image_segment(heat_map):
+    gradient=heat_map
+    markers =heat_map<10
+    markers = ndi.label(markers)[0]
+    labels = watershed(gradient, markers)
+    return  labels
 
 def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name):
     num = len(scores)
@@ -333,6 +340,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         #img = denormalization(img)
         #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
+        watershed_segment_labels=heatmap_image_segment(heat_map)
         mask = scores[i]
         threshold=(mask.max()+mask.min())/2*args.threshold_coefficient
         mask[mask > threshold] = 1
@@ -340,8 +348,8 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         kernel = morphology.disk(4)
         mask = morphology.opening(mask, kernel)
         mask *= 255
+        cv2.bitwise_and(mask,watershed_segment_labels)
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
-        
         fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)

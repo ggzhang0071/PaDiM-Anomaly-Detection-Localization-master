@@ -32,16 +32,26 @@ def image_crop(data):
         for p,inst in enumerate(rec['instances']):
             save_dir=os.path.join(save_image_root, image_dir)
             if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
+                os.makedirs(save_dir,exist_ok=True)
             save_new_image_name=os.path.join(save_dir, os.path.splitext(image_name_part)[0]+"_"+str(p)+".jpg")
-            shapes = np.array(decode_labelme_shape(inst['points']))
-            x1,y1,x2,y2 = int(shapes[:,0].min()), int(shapes[:,1].min()), int(shapes[:,0].max()), int(shapes[:,1].max())
-            crop_img=img[y1:y2,x1:x2]
-            plt.imshow(crop_img) 
-            plt.axis("off")
-            # save new images
-            plt.savefig(save_new_image_name)    
-            anomaly_image_path_label_list.append([save_new_image_name,convert_NG_label(rec['instances'][0]['distribution'],dataset_info["class_dict"])])
+            if not os.path.exists(save_new_image_name):
+                shapes = np.array(decode_labelme_shape(inst['points']))
+                x1,y1,x2,y2 = int(shapes[:,0].min()), int(shapes[:,1].min()), int(shapes[:,0].max()), int(shapes[:,1].max())
+                crop_img=img[y1:y2,x1:x2]
+                plt.imshow(crop_img) 
+                plt.axis("off") 
+                # save new images
+                plt.imsave(save_new_image_name,crop_img) 
+            # delete the corrupted file
+            img1 = cv2.imread(save_new_image_name)
+            if img1 is None:
+                print(save_new_image_name)
+                os.remove(save_new_image_name)
+                continue
+            if [save_new_image_name,convert_NG_label(rec['instances'][0]['distribution'],dataset_info["class_dict"])] in anomaly_image_path_label_list:
+                pass
+            else:
+                anomaly_image_path_label_list.append([save_new_image_name,convert_NG_label(rec['instances'][0]['distribution'],dataset_info["class_dict"])])
     return anomaly_image_path_label_list
 
 def func(listTemp, n):
@@ -64,6 +74,7 @@ if __name__ == '__main__':
 
     cpu_num=24
     for k, data in enumerate(data_list):
+        print("the current process is {} dataset".format(json_file_list[k]))
         with Pool(cpu_num) as p:
             anomaly_image_path_label_list=p.map(image_crop, list(func(data, cpu_num)))
         print(len(anomaly_image_path_label_list[0]))
