@@ -3,6 +3,7 @@ from random import sample
 import argparse
 import numpy as np
 import os
+import imutils
 import pickle
 from tqdm import tqdm
 from collections import OrderedDict
@@ -16,33 +17,34 @@ from dataset import JsonDataset, collate_fn
 from skimage import morphology
 from albumentations.augmentations import transforms
 from albumentations.core.composition import Compose
-from skimage.segmentation import mark_boundaries
+from skimage.segmentation import mark_boundaries, watershed
+#import matplotlib as mpl
+#mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 import matplotlib
 from  coding_related import decode_labelme_shape
 from config import default_config
-from skimage.segmentation import watershed
 import sys
 import  copy
 import torch
 import torch.nn.functional as F
 import cv2
 from torch.utils.data import DataLoader, RandomSampler
-
+from scipy import ndimage as ndi
 from torchvision.models import wide_resnet50_2, resnet18
 #import datasets.mvtec as mvtec
 
 # device setup
 use_cuda = torch.cuda.is_available()
-device = torch.device('cuda:0,1,2,3' if use_cuda else 'cpu')
+device = torch.device('cuda:2,3' if use_cuda else 'cpu')
 
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='./kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
-    parser.add_argument('--train_num_samples', type=int, default=0)
-    parser.add_argument('--test_num_samples', type=int, default=0)
+    parser.add_argument('--train_num_samples', type=int, default=10)
+    parser.add_argument('--test_num_samples', type=int, default=10)
     parser.add_argument('--product_class', type=str, default='0808QFN-16L')
     parser.add_argument('--threshold_coefficient', type=float, default='0.8')
     return parser.parse_args()
@@ -127,19 +129,19 @@ def main():
 
         train_dataloader =DataLoader(train_dataset,
         batch_size=default_config.Batch_Size,
-            #shuffle=True,
+            shuffle=train_sampler is None,
             num_workers=default_config.Num_Workers,
             pin_memory=True,
-            #sampler=False,
+            sampler=train_sampler,
             #drop_last=True
             )
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=default_config.Batch_Size_Test,
-            #shuffle=True,
+            shuffle=test_sampler is None,
             num_workers=default_config.Num_Workers,
             pin_memory=True,
-            #sampler=test_sampler,
+            sampler=test_sampler,
             collate_fn=collate_fn,
             #drop_last=False
             )
@@ -285,10 +287,30 @@ def main():
     #fig.tight_layout()
     #fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
 
-def segment_image(img,mask,save_image_dir,class_name,image_name,step=5):
+def segment_image(img,heat_map,mask,save_image_dir,class_name,image_name,step=5):
     mask=mask.astype("uint8")
     mask_contour,hierarchy  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # loop over the contours
+    """cnts = imutils.grab_contours(mask_contour)
+    for c in cnts:
+        # compute the center of the contour
+        M = cv2.moments(c)
+        cX = int(M["m10"] / M["m00"])
+        cY = int(M["m01"] / M["m00"])
+        # draw the contour and center of the shape on the image
+        cv2.drawContours(image, [c], -1, (0, 255, 0), 2)
+        cv2.circle(image, (cX, cY), 7, (255, 255, 255), -1)
+        cv2.putText(image, "center", (cX - 20, cY - 20),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        # show the image
+        cv2.imshow("Image", image)
+        cv2.waitKey(0)"""
+
     for i, cnt in enumerate(mask_contour):
+        # image segment from small mask
+        small_mask=get_mask_from_heat_map(heat_map)
+        markers = ndi.label(small_mask)[0]
+
         contour_mask = cv2.fillPoly(np.zeros_like(img), [cnt], (255,255,255))
         foreground = cv2.bitwise_and(img, contour_mask)
         bounding_box=cv2.boundingRect(cnt)
@@ -309,6 +331,9 @@ def segment_image(img,mask,save_image_dir,class_name,image_name,step=5):
                 
         crop_region=img[y:y+h,x:x+w] 
         crop_region_pure_foreground = foreground[y:y+h,x:x+w] 
+        small_mask_3d=np.expand_dims(small_mask[y:y+h,x:x+w],axis=2)
+        labels = watershed(crop_region_pure_foreground, np.concatenate((small_mask_3d,small_mask_3d,small_mask_3d),axis=2))
+
         """for k in range(h):
             for j in range(w):
                 if np.count_nonzero(crop_region_pure_foreground[k,j,:])==0:
@@ -322,13 +347,32 @@ def segment_image(img,mask,save_image_dir,class_name,image_name,step=5):
             os.makedirs(save_file_dir)
         plt.savefig(save_file_name)
         plt.close(fig)
-def heatmap_image_segment(heat_map):
-    gradient=heat_map
-    markers =heat_map<10
+        
+"""def heatmap_image_segment(mask,threshold):
+    markers =mask>threshold*0.2
     markers = ndi.label(markers)[0]
-    labels = watershed(gradient, markers)
-    return  labels
+    labels = watershed(mask, markers)
+    return  labels"""
 
+def get_threshold_from_hist(heat_map):
+    hist = cv2.calcHist([heat_map],[0],None,[256],[0,256])
+    num_sum=0
+    for i in range(256):
+        num_sum+=hist[i]
+        if num_sum>=224*224*0.95:
+            return i
+def get_mask_from_heat_map(heat_map):
+    img1 = cv2.GaussianBlur(heat_map,(3,3),0)
+    _,Thr_img = cv2.threshold(heat_map,220,255,cv2.THRESH_BINARY)#设定红色通道阈值210（阈值影响梯度运算效果）
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(5,5))         #定义矩形结构元素
+    gradient = cv2.morphologyEx(Thr_img, cv2.MORPH_GRADIENT, kernel) #梯度
+    mask=np.zeros_like(gradient)
+    threshold=0
+    mask[gradient > threshold] = True
+    mask[gradient <= threshold] = False
+    return mask
+
+ 
 def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name):
     num = len(scores)
     vmax = scores.max() * 255.
@@ -340,15 +384,15 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         #img = denormalization(img)
         #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
-        watershed_segment_labels=heatmap_image_segment(heat_map)
         mask = scores[i]
-        threshold=(mask.max()+mask.min())/2*args.threshold_coefficient
+
+        threshold_coefficient=0.8
+        threshold=(mask.max()+mask.min())/2*threshold_coefficient
         mask[mask > threshold] = 1
         mask[mask <= threshold] = 0
         kernel = morphology.disk(4)
         mask = morphology.opening(mask, kernel)
         mask *= 255
-        cv2.bitwise_and(mask,watershed_segment_labels)
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
         fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
@@ -395,7 +439,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         save_file_dir=os.path.join(save_picture_dir,class_name+ '_{}'.format(i)+".jpg")
         fig_img.savefig(save_file_dir, dpi=100)
         plt.close()
-        segment_image(img_for_segment,mask,save_image_dir,class_name,image_name[i])
+        segment_image(img_for_segment,heat_map,mask,save_image_dir,class_name,image_name[i])
 
 
 def denormalization(x):
@@ -421,4 +465,5 @@ def embedding_concat(x, y):
 
 
 if __name__ == '__main__':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
     main()
