@@ -84,6 +84,6 @@ if __name__=="__main__":
             image_data_root=Image_Data_Root,
                         transform=test_transform,)
       train_dataloader =DataLoader(train_dataset,batch_size=128,collate_fn=collate_fn)
-      for i, (images,anomaly_points,image_name,label) in enumerate(train_dataloader):
+      for i, (images,label,anomaly_points,image_name) in enumerate(train_dataloader):
             print(len(images))
              

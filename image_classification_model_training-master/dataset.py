@@ -108,7 +108,6 @@ if __name__ == '__main__':
         img_path = line.split(' ')[0]
         #img = Image.open(img_path)
         img = Image.open('/git/PaDiM-master/kangqiang_result/croped_images/image/1101QFN-40L/lot1/NG/ZM/1101QFN-40L-976-53_0_0_6639_18170_0.jpg')
-
         img = transform_test(img)
         if img.shape[0] != 3:
             print(img.shape)

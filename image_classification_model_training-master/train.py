@@ -241,12 +241,13 @@ def main(train_path,val_path,image_data_root, checkpoint_path=None):
     # in distribution training? flag
     for i in tqdm(range(start_epoch, epochs)):
         # switch the main loss to FocalLoss after 10 epochs
-        if i == 10:
+        """if i == 10:
             main_criterion = FocalLoss(class_num=class_num)
         # switch the regulization loss to AMSoftmax after 30 epochs
         if i == 30:
             regu_criterion = AMSoftmax(embedding_dim, class_num)
-        print('epoch:', i)
+        print('epoch:', i)"""
+        
 
         l = train(model, trainloader, optimizer, main_criterion, regu_criterion)
             

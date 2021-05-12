@@ -1,6 +1,7 @@
 import random
 from random import sample
 import argparse
+from matplotlib import image
 import numpy as np
 import os
 import imutils
@@ -43,8 +44,8 @@ def parse_args():
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='./kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
-    parser.add_argument('--train_num_samples', type=int, default=10)
-    parser.add_argument('--test_num_samples', type=int, default=10)
+    parser.add_argument('--train_num_samples', type=int, default=2)
+    parser.add_argument('--test_num_samples', type=int, default=2)
     parser.add_argument('--product_class', type=str, default='0808QFN-16L')
     parser.add_argument('--threshold_coefficient', type=float, default='0.8')
     return parser.parse_args()
@@ -129,21 +130,19 @@ def main():
 
         train_dataloader =DataLoader(train_dataset,
         batch_size=default_config.Batch_Size,
-            shuffle=train_sampler is None,
-            num_workers=default_config.Num_Workers,
-            pin_memory=True,
-            sampler=train_sampler,
+            #shuffle=train_sampler is None,
+            #pin_memory=True,
+            #sampler=train_sampler,
             #drop_last=True
             )
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=default_config.Batch_Size_Test,
-            shuffle=test_sampler is None,
-            num_workers=default_config.Num_Workers,
-            pin_memory=True,
-            sampler=test_sampler,
+            #shuffle=False,
+            #pin_memory=True,
+            #sampler=test_sampler,
             collate_fn=collate_fn,
-            #drop_last=False
+            drop_last=False
             )
 
         train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
@@ -193,11 +192,16 @@ def main():
         gt_mask_list = []
         test_imgs = []
         anomaly_point_lists=[]
+        label_list=[]
+        image_name_list=[]
 
         # extract test set features
-        for x, _, anomaly_points, loc_list in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
+        for x, label, anomaly_points, image_name in tqdm(test_dataloader, '| feature extraction | test | %s |' % class_name):
             test_imgs.extend(x)
             anomaly_point_lists.extend(anomaly_points)
+            label_list.extend(label)
+            image_name_list.extend(image_name)
+
             #gt_list.extend(y.cpu().detach().numpy())
             #gt_mask_list.extend(mask.cpu().detach().numpy())
             # model prediction
@@ -274,7 +278,7 @@ def main():
         
         os.makedirs(save_picture_dir, exist_ok=True)
         os.makedirs(save_image_dir, exist_ok=True)
-        plot_fig(test_imgs, scores, anomaly_point_lists,save_picture_dir,save_image_dir,class_name,args.threshold_coefficient,loc_list)
+        plot_fig(test_imgs,label_list,scores, anomaly_point_lists,save_picture_dir,save_image_dir,class_name,args.threshold_coefficient,image_name_list)
 
     """print('Average ROCAUC: %.3f' % np.mean(total_roc_auc))
     fig_img_rocauc.title.set_text('Average image ROCAUC: %.3f' % np.mean(total_roc_auc))
@@ -286,17 +290,39 @@ def main():
 
     #fig.tight_layout()
     #fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
+def grabcut_image_segment(image,mask):
+    fgModel = np.zeros((1, 65), dtype="float")  #两个空数组，便于在从背景分割前景时使用（fgModel和bgModel）
+    bgModel = np.zeros((1, 65), dtype="float")
+    # apply GrabCut using the the bounding box segmentation method
+    (mask, bgModel, fgModel) = cv2.grabCut(image, mask, None, None,None, iterCount=10, mode=cv2.GC_INIT_WITH_MASK)
+    values = (
+      ("Definite Background", cv2.GC_BGD),
+      ("Probable Background", cv2.GC_PR_BGD),
+      ("Definite Foreground", cv2.GC_FGD),
+      ("Probable Foreground", cv2.GC_PR_FGD),
+    )
+    # loop over the possible GrabCut mask values
+    for (name, value) in values:
+        # construct a mask that for the current value
+        #print("[INFO] showing mask for '{}'".format(name))
+        valueMask = (mask == value).astype("uint8") * 255
+        # display the mask so we can visualize it
+        #ax.imshow(valueMask.astype("uint8"))
+    outputMask = np.where((mask == cv2.GC_BGD) | (mask == cv2.GC_PR_BGD), 0, 1)
+    outputMask = (outputMask * 255).astype("uint8")
+    output = cv2.bitwise_and(image, image, mask=outputMask)
+    return output
 
-def segment_image(img,heat_map,mask,save_image_dir,class_name,image_name,step=5):
+def segment_image(img,label,heat_map,mask,points,save_image_dir,class_name,image_name,step=5):
+    image_label_for_classifiation=[]
+    x1,y1,x2,y2 =points
     mask=mask.astype("uint8")
     mask_contour,hierarchy  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     # loop over the contours
-    """cnts = imutils.grab_contours(mask_contour)
+    """cnts = imutils.grab_contours(mask)
     for c in cnts:
         # compute the center of the contour
-        M = cv2.moments(c)
-        cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
+      
         # draw the contour and center of the shape on the image
         cv2.drawContours(image, [c], -1, (0, 255, 0), 2)
         cv2.circle(image, (cX, cY), 7, (255, 255, 255), -1)
@@ -307,6 +333,13 @@ def segment_image(img,heat_map,mask,save_image_dir,class_name,image_name,step=5)
         cv2.waitKey(0)"""
 
     for i, cnt in enumerate(mask_contour):
+        # compute the center of image
+        M = cv2.moments(cnt)
+        cX = int(M["m10"] / M["m00"])
+        cY = int(M["m01"] / M["m00"])
+        if x1<=cX<=x2 and y1<=cY<=y2:
+            image_label_for_classifiation.append([image_name,label])
+
         # image segment from small mask
         small_mask=get_mask_from_heat_map(heat_map)
         markers = ndi.label(small_mask)[0]
@@ -331,13 +364,11 @@ def segment_image(img,heat_map,mask,save_image_dir,class_name,image_name,step=5)
                 
         crop_region=img[y:y+h,x:x+w] 
         crop_region_pure_foreground = foreground[y:y+h,x:x+w] 
-        small_mask_3d=np.expand_dims(small_mask[y:y+h,x:x+w],axis=2)
-        labels = watershed(crop_region_pure_foreground, np.concatenate((small_mask_3d,small_mask_3d,small_mask_3d),axis=2))
-
-        """for k in range(h):
-            for j in range(w):
-                if np.count_nonzero(crop_region_pure_foreground[k,j,:])==0:
-                    crop_region_pure_foreground[k,j,:]=crop_region[k,j,:]"""
+        small_mask_pure_foreground= small_mask[y:y+h,x:x+w]
+        """small_mask_3d=np.expand_dims(small_mask[y:y+h,x:x+w],axis=2)
+        labels = watershed(crop_region_pure_foreground, np.concatenate((small_mask_3d,small_mask_3d,small_mask_3d),axis=2))"""
+        if small_mask_pure_foreground.max()!=0:
+            crop_region_pure_foreground=grabcut_image_segment(crop_region_pure_foreground,small_mask_pure_foreground)
         fig=plt.figure()
         plt.imshow(crop_region_pure_foreground)
         plt.axis("off")
@@ -347,6 +378,8 @@ def segment_image(img,heat_map,mask,save_image_dir,class_name,image_name,step=5)
             os.makedirs(save_file_dir)
         plt.savefig(save_file_name)
         plt.close(fig)
+    with open(os.path.join(save_image_dir,"image_label_for_classification.txt"),"a+") as fid:
+        fid.writelines([save_file_name+" "+str(i[1])+"\n" for i in image_label_for_classifiation])
         
 """def heatmap_image_segment(mask,threshold):
     markers =mask>threshold*0.2
@@ -359,21 +392,24 @@ def get_threshold_from_hist(heat_map):
     num_sum=0
     for i in range(256):
         num_sum+=hist[i]
-        if num_sum>=224*224*0.95:
+        if num_sum>=224*224*0.9:
             return i
 def get_mask_from_heat_map(heat_map):
+    heat_map = cv2.normalize(heat_map, None, 0, 255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC3)
+    threshold=get_threshold_from_hist(heat_map)
     img1 = cv2.GaussianBlur(heat_map,(3,3),0)
-    _,Thr_img = cv2.threshold(heat_map,220,255,cv2.THRESH_BINARY)#设定红色通道阈值210（阈值影响梯度运算效果）
+    _,Thr_img = cv2.threshold(heat_map,threshold,255,cv2.THRESH_BINARY)#设定红色通道阈值210（阈值影响梯度运算效果）
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(5,5))         #定义矩形结构元素
     gradient = cv2.morphologyEx(Thr_img, cv2.MORPH_GRADIENT, kernel) #梯度
+    histr = cv2.calcHist([gradient],[0],None,[256],[0,256])
     mask=np.zeros_like(gradient)
+    mask=mask.astype("uint8")
     threshold=0
-    mask[gradient > threshold] = True
-    mask[gradient <= threshold] = False
+    mask[gradient < threshold] = 1
     return mask
 
  
-def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name):
+def plot_fig(test_img, label_list,scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name_list):
     num = len(scores)
     vmax = scores.max() * 255.
     vmin = scores.min() * 255.
@@ -439,7 +475,7 @@ def plot_fig(test_img, scores,anomaly_point_lists, save_picture_dir,save_image_d
         save_file_dir=os.path.join(save_picture_dir,class_name+ '_{}'.format(i)+".jpg")
         fig_img.savefig(save_file_dir, dpi=100)
         plt.close()
-        segment_image(img_for_segment,heat_map,mask,save_image_dir,class_name,image_name[i])
+        segment_image(img_for_segment,label_list[i],heat_map,mask,[x1,y1,x2,y2],save_image_dir,class_name,image_name_list[i])
 
 
 def denormalization(x):
@@ -465,5 +501,5 @@ def embedding_concat(x, y):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,3"
     main()
