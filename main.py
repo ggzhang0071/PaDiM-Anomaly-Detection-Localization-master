@@ -37,15 +37,15 @@ from torchvision.models import wide_resnet50_2, resnet18
 
 # device setup
 use_cuda = torch.cuda.is_available()
-device = torch.device('cuda:2,3' if use_cuda else 'cpu')
+device = torch.device('cuda:0,1,3' if use_cuda else 'cpu')
 
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='./kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
-    parser.add_argument('--train_num_samples', type=int, default=2)
-    parser.add_argument('--test_num_samples', type=int, default=2)
+    parser.add_argument('--train_num_samples', type=int, default=0)
+    parser.add_argument('--test_num_samples', type=int, default=0)
     parser.add_argument('--product_class', type=str, default='0808QFN-16L')
     parser.add_argument('--threshold_coefficient', type=float, default='0.8')
     return parser.parse_args()
@@ -130,17 +130,17 @@ def main():
 
         train_dataloader =DataLoader(train_dataset,
         batch_size=default_config.Batch_Size,
-            #shuffle=train_sampler is None,
+            shuffle=train_sampler is None,
             #pin_memory=True,
-            #sampler=train_sampler,
-            #drop_last=True
+            sampler=train_sampler,
+            drop_last=True
             )
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=default_config.Batch_Size_Test,
-            #shuffle=False,
+            shuffle=test_sampler is None,
             #pin_memory=True,
-            #sampler=test_sampler,
+            sampler=test_sampler,
             collate_fn=collate_fn,
             drop_last=False
             )
@@ -479,7 +479,6 @@ def embedding_concat(x, y):
     for i in range(x.size(2)):
         z[:, :, i, :, :] = torch.cat((x[:, :, i, :, :], y), 1)
     z = z.view(B, -1, H2 * W2)
-    #z.cuda("cuda1,2,3")
     z = F.fold(z, kernel_size=s, output_size=(H1, W1), stride=s)
     return z
 
