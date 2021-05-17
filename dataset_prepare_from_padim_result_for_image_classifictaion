@@ -23,7 +23,6 @@ image_name="Padim_results_image_label_for_classification.txt"
 save_folder="dataset_produce_from_padim"
 
 choose_label=[3,8,9]
-label_mapping={"3":"0","8":"1","9":"2"}
 part_image_label_list=[]
 show_size=3
 num=1
@@ -33,7 +32,7 @@ with open(os.path.join(json_path,image_name),"r") as fid:
         image_name= image_label.split(" ")[0]
         label= image_label.split(" ")[-1].strip()
         if int(label) in choose_label:
-            part_image_label_list.append(image_name+" "+label_mapping[label]+"\n")
+            part_image_label_list.append(image_label)
 
 
 data_train_list,data_list=split(part_image_label_list,ratio=0.7)
@@ -45,7 +44,9 @@ save_data_list=[data_train_list,data_val_list,data_test_list]
 save_data_name=["train.txt","val.txt","test.txt"]
 for i in range(len(save_data_list)):
     with open(os.path.join(json_path,save_folder,save_data_name[i]), 'w+',encoding="utf8") as fid:
-        fid.writelines(save_data_list[i])
+        for k in save_data_list[i]:
+            print(k)
+        fid.writelines([k  for k in save_data_list[i]])
         print("{} is written".format(save_data_name[i]))
   
         
