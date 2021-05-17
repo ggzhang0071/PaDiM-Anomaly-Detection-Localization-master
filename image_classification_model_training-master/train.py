@@ -18,7 +18,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-f = open('config.json')
+f = open('config_part_label.json')
 config = json.load(f)
 
 epochs = config['epochs']
@@ -159,7 +159,7 @@ def evaluate(model, loader):
         y_softmax=np.nan_to_num(y_softmax,nan=0.001)
 
     row_sums = np.sum(y_softmax, 1)
-    row_sums = row_sums.repeat(10)
+    row_sums = row_sums.repeat(y_softmax.shape[1])
     row_sums = row_sums.reshape(y_softmax.shape)
     y_softmax =y_softmax/row_sums 
     if class_num == 2:

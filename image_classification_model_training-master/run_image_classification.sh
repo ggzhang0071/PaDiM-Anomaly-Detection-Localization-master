@@ -1,4 +1,3 @@
-
 rm Logs/image_classification_model_training_*.log 
 
 for i  in {1..5}

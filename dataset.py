@@ -79,7 +79,7 @@ class JsonDataset(torch.utils.data.Dataset):
       if self.flag==True:
             return img, template_img, self.label[idx], self.anomaly_loc_list[idx], self.image_name_list[idx]
       else:
-            return  img
+            return img
 
 if __name__=="__main__":
       data_list=[]
