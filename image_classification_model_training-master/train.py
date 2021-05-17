@@ -19,6 +19,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 f = open('config_part_label.json')
+#f = open('config.json')
 config = json.load(f)
 
 epochs = config['epochs']

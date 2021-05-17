@@ -18,6 +18,7 @@ def split(full_list,shuffle=False,ratio=0.2):
 #get_key_from_distribution
 product_class=['0708DFN-8L', 'DFN-5X6-T-8L', '0420QFN-5X6-8L' ,'1101QFN-40L', '0713DFN-2X3-8L', 'DFN-5X6-8L' ,'1129QFN-4X4-24L','QFN-3X3-16L']
 
+
 save_folder="json_for_classification"
 json_path="assets_new_new/data/2021-03-05"
 

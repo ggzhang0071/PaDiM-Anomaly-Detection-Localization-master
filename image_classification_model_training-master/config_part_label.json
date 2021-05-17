@@ -1,14 +1,17 @@
 {
     "epochs": 100,
     "batch_size": 1024,
-    "class_num": 3,
     "input_size": 128,
     "embedding_dim": 64,
-    "classes":  {"3": "huashang",  "8":"wuzi", "9":"yiwu"},
+    "class_num": 2,
+    "classes":  {"3": "huashang",   "9":"yiwu"},
     "device_id": 2,
     "model": "resnet50",
     "image_data_root": "/git/PaDiM-master",
-    "json_dir":"/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification/dataset_produce_from_padim",
+    "json_dir0":"/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification/dataset_produce_from_padim",
+    
+    "json_dir":"/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification/specific_label_dataset_produce_from_original_annotation",
+
     "tain_file": "train.txt",
     "val_file": "val.txt",
     "test_file":  "test.txt",

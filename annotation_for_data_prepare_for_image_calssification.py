@@ -37,6 +37,8 @@ with open(os.path.join(json_path,image_name),"r") as fid:
         if int(label) in choose_label:
             image_name= image_label.split(" ")[0]
             image_split_path_list=image_name.split("/")
+            if image_split_path_list[4] not in product_id:
+                continue
             image_name=image_split_path_list[-1]
             image_name_without_ext,ext=os.path.splitext(image_name)
             
@@ -44,8 +46,7 @@ with open(os.path.join(json_path,image_name),"r") as fid:
             original_image_name_without_ext.pop()
             new_image_name="_".join(original_image_name_without_ext)+ext
             new_image_path= os.path.join("/git/PaDiM-master/kangqiang_result/croped_images","/".join(image_split_path_list[3:-1]),new_image_name)
-            if os.path.exists(new_image_path):
-                part_image_label_list.append(new_image_path+" "+label_mapping[label]+"\n")
+            part_image_label_list.append(new_image_path+" "+label_mapping[label]+"\n")
 
 
 data_train_list,data_list=split(part_image_label_list,ratio=0.7)

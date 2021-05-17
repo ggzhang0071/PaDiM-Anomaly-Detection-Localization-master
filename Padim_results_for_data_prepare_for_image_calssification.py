@@ -13,25 +13,28 @@ def split(full_list,shuffle=False,ratio=0.2):
         random.shuffle(full_list)
     sublist_1 = full_list[:offset]
     sublist_2 = full_list[offset:]
-    
     return sublist_1,sublist_2
 
+product_id=["0420QFN-5X6-8L", "0708DFN-8L",  "0713DFN-2X3-8L",  "1101QFN-40L",  "1129QFN-4X4-24L", "DFN-5X6-8L ", "DFN-5X6-T-8L", "QFN-3X3-16L"]
 
 classes={"0": "lianjiao", "1": "shakong", "2": "guoshi", "3": "huashang", "4":"yanghua", "5":"tongheidian", "6":"heidian", "7":"feilinjiao", "8":"wuzi", "9":"yiwu"}
 json_path="/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification"
 image_name="Padim_results_image_label_for_classification.txt"
 save_folder="dataset_produce_from_padim"
 
-choose_label=[3,8,9]
-label_mapping={"3":"0","8":"1","9":"2"}
+choose_label=[3,9]
+label_mapping={"3":"0","9":"1"}
 part_image_label_list=[]
 show_size=3
 num=1
 with open(os.path.join(json_path,image_name),"r") as fid:
     image_label_list=fid.readlines()
     for image_label in image_label_list:
-        image_name= image_label.split(" ")[0]
         label= image_label.split(" ")[-1].strip()
+        image_name= image_label.split(" ")[0]
+        image_split_path_list=image_name.split("/")
+        if image_split_path_list[4] not in product_id:
+            continue
         if int(label) in choose_label:
             part_image_label_list.append(image_name+" "+label_mapping[label]+"\n")
 
