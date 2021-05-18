@@ -6,12 +6,12 @@ from common_lib.tools.cnn_json_related import ClassNameManager
 from common_lib.tools.coding_related import decode_distribution
 
 def convert_NG_label(distribution,class_dict):
-      distribution_list=decode_distribution(distribution)
-      class_name_manager=ClassNameManager(class_dict)
-      NG_type=class_name_manager.get_key_from_distribution(distribution_list)
-      for class_num in class_dict:
-            if NG_type[-1]==class_num["class_name"]:
-                  return class_num["class_id"]-4
+    distribution_list=decode_distribution(distribution)
+    class_name_manager=ClassNameManager(class_dict)
+    NG_type=class_name_manager.get_key_from_distribution(distribution_list)
+    for class_num in class_dict:
+        if NG_type[-1]==class_num["class_name"]:
+            return class_num["class_id"]-4
 
 json_file="/git/PaDiM-master/assets_new_new/data/2021-03-05"
 json_file_list=["train.json","val.json","test.json"]

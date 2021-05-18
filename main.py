@@ -42,7 +42,7 @@ device = torch.device('cuda:0,1,3' if use_cuda else 'cpu')
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
-    parser.add_argument('--save_path', type=str, default='./kangqiang_result')
+    parser.add_argument('--save_path', type=str, default='/git/PaDiM-master/kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
     parser.add_argument('--train_num_samples', type=int, default=0)
     parser.add_argument('--test_num_samples', type=int, default=0)
@@ -118,7 +118,7 @@ def main():
             image_data_root=default_config.Image_Data_Root,
             transform=val_transform,
             )  # use real data as validation
-        if args.train_num_samples==0:
+        """if args.train_num_samples==0:
             train_sampler=None
         else:
            train_sampler=RandomSampler(train_dataset,num_samples=args.train_num_samples, replacement=True)
@@ -126,21 +126,21 @@ def main():
         if args.test_num_samples==0:
             test_sampler=None
         else:
-            test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)
+            test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)"""
 
         train_dataloader =DataLoader(train_dataset,
         batch_size=default_config.Batch_Size,
-            shuffle=train_sampler is None,
+            #shuffle=True,
             #pin_memory=True,
-            sampler=train_sampler,
+            #sampler=train_sampler,
             drop_last=True
             )
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=default_config.Batch_Size_Test,
-            shuffle=test_sampler is None,
+            #shuffle=False,
             #pin_memory=True,
-            sampler=test_sampler,
+            #sampler=test_sampler,
             collate_fn=collate_fn,
             drop_last=False
             )
@@ -326,37 +326,38 @@ def segment_image(img,diff_mask,label,heat_map,mask,points,save_image_dir,class_
         M = cv2.moments(cnt)
         cX = int(M["m10"] / M["m00"])
         cY = int(M["m01"] / M["m00"])
-        if x1<=cX<=x2 and y1<=cY<=y2:
-            # image segment from small mask
-            small_mask=get_mask_from_heat_map(heat_map)
-            markers = ndi.label(small_mask)[0]
 
-            contour_mask = cv2.fillPoly(np.zeros_like(img), [cnt], (255,255,255))
-            foreground = cv2.bitwise_and(img, contour_mask)
-            bounding_box=cv2.boundingRect(cnt)
-            x, y, w, h = bounding_box
-            #crop_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
+        # image segment from small mask
+        small_mask=get_mask_from_heat_map(heat_map)
+        markers = ndi.label(small_mask)[0]
+
+        contour_mask = cv2.fillPoly(np.zeros_like(img), [cnt], (255,255,255))
+        foreground = cv2.bitwise_and(img, contour_mask)
+        bounding_box=cv2.boundingRect(cnt)
+        x, y, w, h = bounding_box
+        #crop_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
                     
-            small_mask_pure_foreground= small_mask[y:y+h,x:x+w]
-            crop_region_pure_foreground=img[y:y+h,x:x+w]
-            if small_mask_pure_foreground.max()!=0:
-                crop_region_pure_foreground=grabcut_image_segment(crop_region_pure_foreground,small_mask_pure_foreground)
-            crop_region_pure_foreground = cv2.bitwise_and(crop_region_pure_foreground, diff_mask[y:y+h,x:x+w,:])
+        small_mask_pure_foreground= small_mask[y:y+h,x:x+w]
+        crop_region_pure_foreground=img[y:y+h,x:x+w]
+        if small_mask_pure_foreground.max()!=0:
+            crop_region_pure_foreground=grabcut_image_segment(crop_region_pure_foreground,small_mask_pure_foreground)
+        crop_region_pure_foreground = cv2.bitwise_and(crop_region_pure_foreground, diff_mask[y:y+h,x:x+w,:])
 
-            fig=plt.figure()
-            plt.imshow(crop_region_pure_foreground)
-            plt.axis("off")
-            save_file_name=os.path.join(save_image_dir,image_name)
-            save_file_dir,save_image_name=os.path.split(save_file_name)
-            save_file_name_without_ext=os.path.splitext(save_image_name)[0]
-            if not os.path.exists(save_file_dir):
-                os.makedirs(save_file_dir)
-            save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+"_"+str(i)+".jpg")
-            plt.savefig(save_image_name_new)
-            plt.close(fig)
-            image_label_for_classifiation.append([save_image_name_new,label])
+        fig=plt.figure()
+        plt.imshow(crop_region_pure_foreground)
+        plt.axis("off")
+        save_file_name=os.path.join(save_image_dir,image_name)
+        save_file_dir,save_image_name=os.path.split(save_file_name)
+        save_file_name_without_ext=os.path.splitext(save_image_name)[0]
+        if not os.path.exists(save_file_dir):
+            os.makedirs(save_file_dir)
+        save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+"_"+str(i)+".jpg")
+        plt.savefig(save_image_name_new)
+        plt.close(fig)
+        #if x1<=cX<=x2 and y1<=cY<=y2:
+        image_label_for_classifiation.append([save_image_name_new,label])
 
-    with open(os.path.join(save_image_dir,"image_label_for_classification.txt"),"a+") as fid:
+    with open(os.path.join(save_image_dir,"Padim_results_image_label_for_classification.txt"),"a+") as fid:
         fid.writelines([save_image_name_new+" "+str(i[1])+"\n" for i in image_label_for_classifiation])
         
 
