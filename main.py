@@ -47,7 +47,9 @@ def parse_args():
     parser.add_argument('--train_num_samples', type=int, default=0)
     parser.add_argument('--test_num_samples', type=int, default=0)
     parser.add_argument('--product_class', type=str, default='0808QFN-16L')
-    parser.add_argument('--threshold_coefficient', type=float, default='0.8')
+    parser.add_argument('--threshold_coefficient', type=float, default=0.8)
+    parser.add_argument('--gaussian_blur_kernel_size', type=int, default=5)
+
     return parser.parse_args()
 
 def main():
@@ -292,6 +294,7 @@ def main():
 
     #fig.tight_layout()
     #fig.savefig(os.path.join(args.save_path, 'roc_curve.png'), dpi=100)
+
 def grabcut_image_segment(image,mask):
     fgModel = np.zeros((1, 65), dtype="float")  #两个空数组，便于在从背景分割前景时使用（fgModel和bgModel）
     bgModel = np.zeros((1, 65), dtype="float")
@@ -389,14 +392,17 @@ def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, 
     for i in range(num):
         img = test_img[i]
         template_img=template_img_list[i]
-        image_subtraction_diff = cv2.absdiff(img.numpy().astype("uint8"), template_img.numpy().astype("uint8"))
-        image_subtraction_diff=cv2.GaussianBlur(image_subtraction_diff,(3, 3),0)
+        img=img.numpy().astype("uint8")
+        template_img=template_img.numpy().astype("uint8")
+        img=cv2.GaussianBlur(img,(5, 5),0)
+        template_img=cv2.GaussianBlur(template_img,(5, 5),0)
+        image_subtraction_diff = cv2.absdiff(img, template_img)
         normalized_image_diff = cv2.normalize(image_subtraction_diff, None, 0, 255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC3)
         _,diff_mask = cv2.threshold(normalized_image_diff,30,255,cv2.THRESH_BINARY)
         diff_mask=diff_mask.transpose(1,2,0)
 
         img=img/255
-        img=img.permute(1, 2, 0)
+        img=img.transpose(1, 2, 0)
         #img = denormalization(img)
         #gt = gts[i].transpose(1, 2, 0).squeeze()
         heat_map = scores[i] * 255
@@ -416,7 +422,7 @@ def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, 
         for ax_i in ax_img:
             ax_i.axes.xaxis.set_visible(False)
             ax_i.axes.yaxis.set_visible(False)
-        img=(255*img.numpy()).astype(np.uint8)
+        img=(255*img).astype(np.uint8)
         img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)  
         img_for_segment=copy.deepcopy(img)
         ax_img[0].imshow(img)
