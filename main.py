@@ -1,9 +1,13 @@
 import random
 from random import sample
 import argparse
+from typing_extensions import runtime
+from albumentations.augmentations.functional import crop_keypoint_by_coords
 from matplotlib import image
 import numpy as np
 import os
+
+from numpy.lib.function_base import diff
 import imutils
 import pickle
 from tqdm import tqdm
@@ -44,12 +48,11 @@ def parse_args():
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
     parser.add_argument('--save_path', type=str, default='/git/PaDiM-master/kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
-    parser.add_argument('--train_num_samples', type=int, default=0)
-    parser.add_argument('--test_num_samples', type=int, default=0)
+    parser.add_argument('--train_num_samples', type=int, default=10)
+    parser.add_argument('--test_num_samples', type=int, default=10)
     parser.add_argument('--product_class', type=str, default='0808QFN-16L')
     parser.add_argument('--threshold_coefficient', type=float, default=0.8)
     parser.add_argument('--gaussian_blur_kernel_size', type=int, default=5)
-
     return parser.parse_args()
 
 def main():
@@ -120,7 +123,7 @@ def main():
             image_data_root=default_config.Image_Data_Root,
             transform=val_transform,
             )  # use real data as validation
-        """if args.train_num_samples==0:
+        if args.train_num_samples==0:
             train_sampler=None
         else:
            train_sampler=RandomSampler(train_dataset,num_samples=args.train_num_samples, replacement=True)
@@ -128,13 +131,13 @@ def main():
         if args.test_num_samples==0:
             test_sampler=None
         else:
-            test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)"""
+            test_sampler=RandomSampler(test_dataset, num_samples=args.test_num_samples, replacement=True)
 
         train_dataloader =DataLoader(train_dataset,
         batch_size=default_config.Batch_Size,
             #shuffle=True,
             #pin_memory=True,
-            #sampler=train_sampler,
+            sampler=train_sampler,
             drop_last=True
             )
         test_dataloader = DataLoader(
@@ -142,7 +145,7 @@ def main():
             batch_size=default_config.Batch_Size_Test,
             #shuffle=False,
             #pin_memory=True,
-            #sampler=test_sampler,
+            sampler=test_sampler,
             collate_fn=collate_fn,
             drop_last=False
             )
@@ -156,7 +159,7 @@ def main():
             for x in tqdm(train_dataloader, '| feature extraction | train | %s |' % class_name):
                 # model prediction
                 with torch.no_grad():
-                    _ = model(x.to("cuda:1"))
+                    _ = model(x.to(device))
                 # get intermediate layer outputs
                 for k, v in zip(train_outputs.keys(), outputs):
                     train_outputs[k].append(v.cpu().detach())
@@ -318,7 +321,7 @@ def grabcut_image_segment(image,mask):
     output = cv2.bitwise_and(image, image, mask=outputMask)
     return output
 
-def segment_image(img,diff_mask,label,heat_map,mask,points,save_image_dir,class_name,image_name,step=5):
+def segment_image(img,img_for_backgroud_subtraction,template_img,label,heat_map,mask,points,save_image_dir,class_name,image_name,step=5):
     image_label_for_classifiation=[]
     x1,y1,x2,y2 =points
     mask=mask.astype("uint8")
@@ -331,24 +334,42 @@ def segment_image(img,diff_mask,label,heat_map,mask,points,save_image_dir,class_
         cY = int(M["m01"] / M["m00"])
 
         # image segment from small mask
-        small_mask=get_mask_from_heat_map(heat_map)
-        markers = ndi.label(small_mask)[0]
 
         contour_mask = cv2.fillPoly(np.zeros_like(img), [cnt], (255,255,255))
         foreground = cv2.bitwise_and(img, contour_mask)
         bounding_box=cv2.boundingRect(cnt)
         x, y, w, h = bounding_box
         #crop_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
-                    
-        small_mask_pure_foreground= small_mask[y:y+h,x:x+w]
-        crop_region_pure_foreground=img[y:y+h,x:x+w]
-        if small_mask_pure_foreground.max()!=0:
-            crop_region_pure_foreground=grabcut_image_segment(crop_region_pure_foreground,small_mask_pure_foreground)
-        crop_region_pure_foreground = cv2.bitwise_and(crop_region_pure_foreground, diff_mask[y:y+h,x:x+w,:])
 
+        #mask get from heat map      
+        small_mask=get_mask_from_heat_map(heat_map)
+        markers = ndi.label(small_mask)[0]
+        small_mask_pure_foreground= small_mask[y:y+h,x:x+w]
+
+        crop_region_pure_foreground=img[y:y+h,x:x+w]
+        """if small_mask_pure_foreground.max()!=0:
+            crop_region_pure_foreground=grabcut_image_segment(crop_region_pure_foreground,small_mask_pure_foreground)"""
         fig=plt.figure()
-        plt.imshow(crop_region_pure_foreground)
-        plt.axis("off")
+        if w>7 and h>7:
+            diff_mask,image_diff,max_countour=get_mask_from_backgroud_subtraction(crop_region_pure_foreground,template_img[:,y:y+h,x:x+w]) 
+            if diff_mask.max()!=0:
+                crop_region_pure_foreground = cv2.bitwise_and(crop_region_pure_foreground, diff_mask)
+                cv2.drawContours(image_diff, max_countour, -1, (100, 0, 255),1)
+                fig_img, ax_img = plt.subplots(1, 2, figsize=(8, 4))
+                fig_img.subplots_adjust(right=0.9)
+                for ax_i in ax_img:
+                    ax_i.axes.xaxis.set_visible(False)
+                    ax_i.axes.yaxis.set_visible(False)
+                img=(255*img).astype(np.uint8)
+                img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)  
+                ax_img[0].imshow(crop_region_pure_foreground)
+                ax_img[0].title.set_text('original croped image')
+                ax_img[1].imshow(image_diff)
+                ax_img[1].title.set_text('diff mask')
+                plt.axis("off")
+        else:
+            plt.imshow(crop_region_pure_foreground)
+        plt.clf()
         save_file_name=os.path.join(save_image_dir,image_name)
         save_file_dir,save_image_name=os.path.split(save_file_name)
         save_file_name_without_ext=os.path.splitext(save_image_name)[0]
@@ -356,8 +377,7 @@ def segment_image(img,diff_mask,label,heat_map,mask,points,save_image_dir,class_
             os.makedirs(save_file_dir)
         save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+"_"+str(i)+".jpg")
         plt.savefig(save_image_name_new)
-        plt.close(fig)
-        #if x1<=cX<=x2 and y1<=cY<=y2:
+        plt.close("all")
         image_label_for_classifiation.append([save_image_name_new,label])
 
     with open(os.path.join(save_image_dir,"Padim_results_image_label_for_classification.txt"),"a+") as fid:
@@ -384,7 +404,33 @@ def get_mask_from_heat_map(heat_map):
     mask[gradient < threshold] = 1
     return mask
 
- 
+def preprocess_image(img):
+    #bilaterar was use to reduce noise
+    #bilateral_filtered_image = cv2.bilateralFilter(image,5, 150, 150)
+    if img.shape[-1]!=3:
+        img=img.transpose(1,2,0)
+    gray_image = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    return gray_image
+
+def get_mask_from_backgroud_subtraction(img,template_img):
+    img=cv2.GaussianBlur(img,(5, 5),0)
+    template_img=cv2.GaussianBlur(template_img,(5, 5),0)
+    img=preprocess_image(img)
+    template_img=preprocess_image(template_img)
+    image_diff=cv2.absdiff(img, template_img)
+    kernel = np.ones((5,5),np.uint8)
+    close_operated_image_diff = cv2.morphologyEx(image_diff, cv2.MORPH_CLOSE, kernel)
+    _, thresholded = cv2.threshold(close_operated_image_diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    median = cv2.medianBlur(thresholded, 5)
+    contours, _ = cv2.findContours(median, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    max_countour = max(contours, key = cv2.contourArea)
+    diff_contour = cv2.fillPoly(np.zeros_like(img), [max_countour], (255,255,255))
+    threshold=0
+    diff_mask=np.zeros_like(img,np.uint8)
+    diff_mask[diff_contour < threshold] = 1
+
+    return  diff_mask,image_diff,max_countour
+    
 def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name_list):
     num = len(scores)
     vmax = scores.max() * 255.
@@ -394,12 +440,14 @@ def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, 
         template_img=template_img_list[i]
         img=img.numpy().astype("uint8")
         template_img=template_img.numpy().astype("uint8")
+        img_for_backgroud_subtraction=copy.deepcopy(img)
+        """contours=get_contours_from_backgroud_subtraction(img,template_img)
         img=cv2.GaussianBlur(img,(5, 5),0)
         template_img=cv2.GaussianBlur(template_img,(5, 5),0)
         image_subtraction_diff = cv2.absdiff(img, template_img)
         normalized_image_diff = cv2.normalize(image_subtraction_diff, None, 0, 255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC3)
         _,diff_mask = cv2.threshold(normalized_image_diff,30,255,cv2.THRESH_BINARY)
-        diff_mask=diff_mask.transpose(1,2,0)
+        diff_mask=diff_mask.transpose(1,2,0)"""
 
         img=img/255
         img=img.transpose(1, 2, 0)
@@ -416,6 +464,7 @@ def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, 
         mask = morphology.opening(mask, kernel)
         mask *= 255
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
+        fig=plt.figure()
         fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
@@ -465,8 +514,8 @@ def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, 
             os.makedirs(save_file_dir)
         save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+".jpg")
         plt.savefig(save_image_name_new)
-        plt.close()
-        segment_image(img_for_segment,diff_mask,label_list[i],heat_map,mask,[x1,y1,x2,y2],save_image_dir,class_name,image_name_list[i])
+        plt.close(fig)
+        segment_image(img_for_segment,img_for_backgroud_subtraction,template_img,label_list[i],heat_map,mask,[x1,y1,x2,y2],save_image_dir,class_name,image_name_list[i])
 
 
 def denormalization(x):
