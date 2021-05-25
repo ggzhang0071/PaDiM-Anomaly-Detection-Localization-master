@@ -61,7 +61,7 @@ def func(listTemp, n):
 if __name__ == '__main__':
     from multiprocessing import Pool
     image_data_root="/git/dataSet/raw/unsupervised-learning/kangqiang/"
-    save_image_root="/git/PaDiM-master/kangqiang_result/croped_images"
+    save_image_root="/git/PaDiM-master/kangqiang_result/croped_images_with_original_annotation"
     json_path='assets_new_new/data/2021-03-05/json_for_classification'
     #save_folder="json_for_classification"
     json_file_list=["train.json","val.json","test.json"]
