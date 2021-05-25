@@ -1,8 +1,10 @@
+# split data in train, val and test dataset.
+
 
 import os,cv2, glob
 #image path
 image_data_root="/git/PaDiM-master/kangqiang_result/segment_image_result_wide_resnet50_2/image/**/*.jpg"
-save_image_path="/git/PaDiM-master/kangqiang_result/segment_image_result_wide_resnet50_2/all_corped_images"
+save_image_path="/git/PaDiM-master/kangqiang_result/segment_image_result_wide_resnet50_2/all_croped_images"
 
 # json file path
 json_path="/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification"

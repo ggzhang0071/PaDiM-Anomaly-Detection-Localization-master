@@ -1,3 +1,4 @@
+# data preparation with original annotation for image classification 
 timestamp=`date +%Y%m%d%H%M%S`
 #rm Logs/*.log 
 

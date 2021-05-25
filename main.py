@@ -412,7 +412,6 @@ def get_mask_from_backgroud_subtraction(image,template_image):
     _, thresholded = cv2.threshold(close_operated_image_diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     median = cv2.medianBlur(thresholded, 5)
     contours, _ = cv2.findContours(median, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    print("contours nums is {}".format(len(contours)))
 
     if len(contours)==1:
         max_countour = max(contours, key = cv2.contourArea)
