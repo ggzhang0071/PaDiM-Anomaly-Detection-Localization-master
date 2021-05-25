@@ -347,29 +347,16 @@ def segment_image(img,img_for_backgroud_subtraction,template_img,label,heat_map,
         small_mask_pure_foreground= small_mask[y:y+h,x:x+w]
 
         crop_region_pure_foreground=img[y:y+h,x:x+w]
-        """if small_mask_pure_foreground.max()!=0:
-            crop_region_pure_foreground=grabcut_image_segment(crop_region_pure_foreground,small_mask_pure_foreground)"""
-        fig=plt.figure()
         if w>7 and h>7:
-            diff_mask,image_diff,max_countour=get_mask_from_backgroud_subtraction(crop_region_pure_foreground,template_img[:,y:y+h,x:x+w]) 
-            if diff_mask.max()!=0:
-                crop_region_pure_foreground = cv2.bitwise_and(crop_region_pure_foreground, diff_mask)
-                cv2.drawContours(image_diff, max_countour, -1, (100, 0, 255),1)
-                fig_img, ax_img = plt.subplots(1, 2, figsize=(8, 4))
-                fig_img.subplots_adjust(right=0.9)
-                for ax_i in ax_img:
-                    ax_i.axes.xaxis.set_visible(False)
-                    ax_i.axes.yaxis.set_visible(False)
-                img=(255*img).astype(np.uint8)
-                img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)  
-                ax_img[0].imshow(crop_region_pure_foreground)
-                ax_img[0].title.set_text('original croped image')
-                ax_img[1].imshow(image_diff)
-                ax_img[1].title.set_text('diff mask')
-                plt.axis("off")
-        else:
-            plt.imshow(crop_region_pure_foreground)
-        plt.clf()
+            if small_mask_pure_foreground.max()!=0:
+                crop_region_pure_foreground=grabcut_image_segment(crop_region_pure_foreground,small_mask_pure_foreground)
+            flag, diff_mask,bounding_box=get_mask_from_backgroud_subtraction(crop_region_pure_foreground,template_img[:,y:y+h,x:x+w]) 
+            if flag==1:
+                x1, y1, w1, h1 = bounding_box
+                crop_region_pure_foreground = cv2.bitwise_and(crop_region_pure_foreground[y1:y1+h1,x1:x1+w1], diff_mask[y1:y1+h1,x1:x1+w1])
+
+        plt.imshow(crop_region_pure_foreground)
+        plt.axis("off")
         save_file_name=os.path.join(save_image_dir,image_name)
         save_file_dir,save_image_name=os.path.split(save_file_name)
         save_file_name_without_ext=os.path.splitext(save_image_name)[0]
@@ -377,8 +364,10 @@ def segment_image(img,img_for_backgroud_subtraction,template_img,label,heat_map,
             os.makedirs(save_file_dir)
         save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+"_"+str(i)+".jpg")
         plt.savefig(save_image_name_new)
-        plt.close("all")
+        plt.clf()
         image_label_for_classifiation.append([save_image_name_new,label])
+
+
 
     with open(os.path.join(save_image_dir,"Padim_results_image_label_for_classification.txt"),"a+") as fid:
         fid.writelines([save_image_name_new+" "+str(i[1])+"\n" for i in image_label_for_classifiation])
@@ -410,26 +399,45 @@ def preprocess_image(img):
     if img.shape[-1]!=3:
         img=img.transpose(1,2,0)
     gray_image = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    gray_image=cv2.GaussianBlur(gray_image,(5, 5),0)
     return gray_image
 
-def get_mask_from_backgroud_subtraction(img,template_img):
-    img=cv2.GaussianBlur(img,(5, 5),0)
-    template_img=cv2.GaussianBlur(template_img,(5, 5),0)
-    img=preprocess_image(img)
-    template_img=preprocess_image(template_img)
+def get_mask_from_backgroud_subtraction(image,template_image):
+    img=preprocess_image(image)
+    template_img=preprocess_image(template_image)
     image_diff=cv2.absdiff(img, template_img)
+    # morphology to find contours
     kernel = np.ones((5,5),np.uint8)
     close_operated_image_diff = cv2.morphologyEx(image_diff, cv2.MORPH_CLOSE, kernel)
     _, thresholded = cv2.threshold(close_operated_image_diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     median = cv2.medianBlur(thresholded, 5)
     contours, _ = cv2.findContours(median, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    max_countour = max(contours, key = cv2.contourArea)
-    diff_contour = cv2.fillPoly(np.zeros_like(img), [max_countour], (255,255,255))
-    threshold=0
-    diff_mask=np.zeros_like(img,np.uint8)
-    diff_mask[diff_contour < threshold] = 1
+    print("contours nums is {}".format(len(contours)))
 
-    return  diff_mask,image_diff,max_countour
+    if len(contours)==1:
+        max_countour = max(contours, key = cv2.contourArea)
+        bounding_box=cv2.boundingRect(max_countour)
+        area=cv2.contourArea(max_countour)
+        diff_mask = cv2.fillPoly(np.zeros_like(img), [max_countour], (255,255,255))
+        diff_mask_3d=np.expand_dims(diff_mask,0).repeat(3,axis=0).transpose(1,2,0)
+        return 1,diff_mask_3d,bounding_box
+    else:
+        return 0, None,None
+
+
+    """cv2.drawContours(image_diff, max_countour, -1, (0, 0, 255),1)
+    fig_img, ax_img = plt.subplots(1, 2, figsize=(8, 4))
+    fig_img.subplots_adjust(right=0.9)
+    for ax_i in ax_img:
+        ax_i.axes.xaxis.set_visible(False)
+        ax_i.axes.yaxis.set_visible(False)
+        ax_img[0].imshow(img[::,::-1])
+        ax_img[0].title.set_text('original image')
+        ax_img[1].imshow(image_diff[::,::-1]) 
+        ax_img[1].title.set_text('image diff')
+    plt.savefig("original_image_and_image_diff.jpg")
+
+    return  diff_mask_3d"""
     
 def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name_list):
     num = len(scores)
@@ -464,9 +472,11 @@ def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, 
         mask = morphology.opening(mask, kernel)
         mask *= 255
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
-        fig=plt.figure()
+
         fig_img, ax_img = plt.subplots(1, 4, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
+        vmax = scores.max() * 255.
+        vmin = scores.min() * 255.
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
         for ax_i in ax_img:
             ax_i.axes.xaxis.set_visible(False)
@@ -514,7 +524,7 @@ def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, 
             os.makedirs(save_file_dir)
         save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+".jpg")
         plt.savefig(save_image_name_new)
-        plt.close(fig)
+        plt.clf()
         segment_image(img_for_segment,img_for_backgroud_subtraction,template_img,label_list[i],heat_map,mask,[x1,y1,x2,y2],save_image_dir,class_name,image_name_list[i])
 
 

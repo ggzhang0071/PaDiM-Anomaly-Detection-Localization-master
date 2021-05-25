@@ -78,6 +78,7 @@ if __name__ == '__main__':
         with Pool(cpu_num) as p:
             anomaly_image_path_label_list=p.map(image_crop, list(func(data, cpu_num)))
         print(len(anomaly_image_path_label_list[0]))
+        print(os.path.join(json_path,save_file_list[k]))
         with open(os.path.join(json_path,save_file_list[k]),"w+") as fid:
             num=0
             for i in  range(len(anomaly_image_path_label_list)):

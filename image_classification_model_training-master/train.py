@@ -277,8 +277,7 @@ def main(train_path,val_path,image_data_root, checkpoint_path=None):
 
 
 if __name__ == '__main__':
-
-    os.environ["CUDA_VISIBLE_DEVICES"]="2,3"
+    os.environ["CUDA_VISIBLE_DEVICES"]="1,2,3"
     main(train_path,val_path,image_data_root)
 
     # evaluate best model on test set

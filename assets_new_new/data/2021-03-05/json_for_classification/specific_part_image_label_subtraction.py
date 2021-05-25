@@ -1,14 +1,6 @@
 import os
-def split(full_list,shuffle=False,ratio=0.2):
-    n_total = len(full_list)
-    offset = int(n_total * ratio)
-    if n_total==0 or offset<1:
-        return [],full_list
-    if shuffle:
-        random.shuffle(full_list)
-    sublist_1 = full_list[:offset]
-    sublist_2 = full_list[offset:]
-    return sublist_1,sublist_2
+from Padim_results_for_data_prepare_for_image_calssification import split
+
 
 json_path="/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification"
 save_folder="specific_label_dataset_produce_from_original_annotation"

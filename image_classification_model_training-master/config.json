@@ -5,7 +5,7 @@
     "input_size": 128,
     "embedding_dim": 64,
     "classes":  {"0": "lianjiao", "1": "shakong", "2": "guoshi", "3": "huashang", "4":"yanghua", "5":"tongheidian", "6":"heidian", "7":"feilinjiao", "8":"wuzi", "9":"yiwu"},
-    "device_id": 2,
+    "device_id": 1,
     "model": "resnet50",
     "image_data_root": "kangqiang_result/croped_images",
     "json_dir":"/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification",

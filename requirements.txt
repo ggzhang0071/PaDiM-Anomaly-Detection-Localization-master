@@ -3,3 +3,4 @@ pathlib2
 jupyter
 jupyterlab
 torchvision==0.4.0
+imutils

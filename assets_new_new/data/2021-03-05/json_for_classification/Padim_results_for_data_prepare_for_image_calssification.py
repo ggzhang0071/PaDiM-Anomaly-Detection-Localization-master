@@ -4,7 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from numpy.core.arrayprint import printoptions
 
-def split(full_list,shuffle=False,ratio=0.2):
+def split(full_list,shuffle=True,ratio=0.2):
     n_total = len(full_list)
     offset = int(n_total * ratio)
     if n_total==0 or offset<1:
