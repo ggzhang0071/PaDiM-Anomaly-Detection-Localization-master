@@ -1,0 +1,9 @@
+from get_classification_file_with_original_annotation import  get_image_label_dict_from_original_annotation, get_classification_file_based_on_label
+
+original_annotation_path="/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification"
+image_data_root="/git/PaDiM-master/kangqiang_result/segment_image_result_wide_resnet50_2/image/**/*.jpg"
+
+save_image_path="/git/PaDiM-master/kangqiang_result/croped_images_with_padim_segment_for_classification"
+
+original_image_label_dict= get_image_label_dict_from_original_annotation(original_annotation_path)  
+get_classification_file_based_on_label(original_image_label_dict,image_data_root,save_image_path)  
