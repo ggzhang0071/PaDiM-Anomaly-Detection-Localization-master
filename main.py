@@ -23,8 +23,8 @@ from skimage import morphology
 from albumentations.augmentations import transforms
 from albumentations.core.composition import Compose
 from skimage.segmentation import mark_boundaries, watershed
-#import matplotlib as mpl
-#mpl.use('TkAgg')
+import matplotlib as mpl
+mpl.rc('figure', max_open_warning = 0)
 import matplotlib.pyplot as plt
 import matplotlib
 from  coding_related import decode_labelme_shape
@@ -363,10 +363,8 @@ def segment_image(img,img_for_backgroud_subtraction,template_img,label,heat_map,
         if not os.path.exists(save_file_dir):
             os.makedirs(save_file_dir)
         save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+"_"+str(i)+".jpg")
-        plt.savefig(save_image_name_new)
-        plt.clf()
+        plt.imsave(save_image_name_new,crop_region_pure_foreground)
         image_label_for_classifiation.append([save_image_name_new,label])
-
 
 
     with open(os.path.join(save_image_dir,"Padim_results_image_label_for_classification.txt"),"a+") as fid:
@@ -523,7 +521,6 @@ def plot_fig(test_img,template_img_list, label_list,scores,anomaly_point_lists, 
             os.makedirs(save_file_dir)
         save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+".jpg")
         plt.savefig(save_image_name_new)
-        plt.clf()
         segment_image(img_for_segment,img_for_backgroud_subtraction,template_img,label_list[i],heat_map,mask,[x1,y1,x2,y2],save_image_dir,class_name,image_name_list[i])
 
 

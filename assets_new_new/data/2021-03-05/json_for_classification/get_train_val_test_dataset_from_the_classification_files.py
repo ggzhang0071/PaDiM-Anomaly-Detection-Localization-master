@@ -15,21 +15,21 @@ def split(full_list,shuffle=True,ratio=0.2):
     return sublist_1,sublist_2
 
 def label_mapping(choose_labels):
-    label_mapping={}
+    label_mapping_dict={}
     start_index=0
     for label in choose_labels:
-        label_mapping[label]=start_index
+        label_mapping_dict[label]=start_index
         start_index+=1
-    return  label_mapping
+    return  label_mapping_dict
 
 
-def get_image_label_list_from_origignal_annotation(image_file_path,choose_labels,label_mapping):
+def get_image_label_list_from_origignal_annotation(image_file_path,choose_labels,label_mapping_dict):
     image_name_label_list=[]
     for label in choose_labels:
         image_name_list=os.listdir(os.path.join(image_file_path,str(label)))
-        print("label {} num is {}".format(label_mapping[label],len(image_name_list)))
+        print("label {} num is {}".format(label_mapping_dict[label],len(image_name_list)))
         for image_name in image_name_list:
-            image_name_label_list.append(os.path.join(str(label),image_name)+" "+str(label_mapping[label])+"\n")
+            image_name_label_list.append(os.path.join(str(label),image_name)+" "+str(label_mapping_dict[label])+"\n")
     return image_name_label_list
 
 def get_train_val_test_dataset(image_name_label_list,train_ratio,val_ratio,save_txt_folder):
@@ -47,12 +47,12 @@ def get_train_val_test_dataset(image_name_label_list,train_ratio,val_ratio,save_
 
 if __name__=="__main__":
     # this example is used for  self supervised learning
-    image_file_path="/git/PaDiM-master/kangqiang_result/croped_images_part_with_classification"
+    image_file_path="/git/PaDiM-master/kangqiang_result/segment_image_result_wide_resnet50_2"
     save_txt_folder="/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification/data_prepare_for_semi_supervised_learning"
-    choose_labels=[0,5]
-    label_mapping=label_mapping(choose_labels)
-    image_name_label_list=get_image_label_list_from_origignal_annotation(image_file_path,save_txt_folder,label_mapping)
-    get_train_val_test_dataset(image_name_label_list,0.7,0.333)
+    choose_labels=list(range(10))
+    label_mapping_dict=label_mapping(choose_labels)
+    image_name_label_list=get_image_label_list_from_origignal_annotation(image_file_path,choose_labels,label_mapping_dict)
+    get_train_val_test_dataset(image_name_label_list,0.7,0.333,save_txt_folder)
 
 
 
