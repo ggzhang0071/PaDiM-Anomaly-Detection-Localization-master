@@ -2,12 +2,14 @@ import random
 from random import sample
 import argparse
 from typing_extensions import runtime
+from PIL.Image import CONTAINER
 from albumentations.augmentations.functional import crop_keypoint_by_coords
 from matplotlib import image
 import numpy as np
 import os
-
+import plantcv.plantcv as pcv
 from numpy.lib.function_base import diff
+from scipy.ndimage.measurements import label
 import imutils
 import pickle
 from tqdm import tqdm
@@ -50,7 +52,7 @@ def parse_args():
     parser.add_argument('--save_path', type=str, default='/git/PaDiM-master/kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
     parser.add_argument('--train_num_samples', type=int, default=10)
-    parser.add_argument('--test_num_samples', type=int, default=20)
+    parser.add_argument('--test_num_samples', type=int, default=10)
     parser.add_argument('--product_class', type=str, default='0808QFN-16L')
     parser.add_argument('--threshold_coefficient', type=float, default=0.8)
     parser.add_argument('--gaussian_blur_kernel_size', type=int, default=5)
@@ -61,30 +63,30 @@ def tensorrt_optimize_model(input,original_model):
     input=input.to("cuda")
     original_model.to("cuda")
     torch.onnx.export(original_model, input, 'temp_wide_resnet50_2.onnx', input_names=input_name, output_names=output_name, verbose=True)
-
     model = onnx.load('temp_wide_resnet50_2.onnx')
     onnx.checker.check_model(model)
     print("==> Passed")
     return model
 
     
-def crop_image_based_on(img):
-    height,width=img.shape
-    #crop_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
+def crop_image(img,bounding_box):
+    x, y, w, h = bounding_box
+    height,width=img.shape[:2]
+    #croped_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
     stepx=int(w/4)
     stepy=int(h/4)
     # expand the crop range
-    if x<stepx or y<stepy or x>224-stepx or y>224-stepy:
-        if x<=stepx:
-            stepx=x
-        if y<stepy:
-            stepy=y
-        if x>(224-w-stepx):
-            x=224-w-stepx
-        if y>(224-h-stepy):
-            y=224-h-stepy
-    crop_images=img[y:y+h,x:x+w] 
+    if x<=stepx:
+        stepx=x
+    if y<=stepy:
+        stepy=y
+    if x>=(height-w-stepx):
+        x=height-w-stepx
+    if y>=(width-h-stepy):
+        y=width-h-stepy
+    crop_images=img[y-stepy:y+h+stepy,x-stepx:x+w+stepx] 
     return crop_images
+
 
 
 def main():
@@ -229,26 +231,30 @@ def main():
 
         gt_list = []
         gt_mask_list = []
-        test_imgs = []
-        template_imgs=[]
+        test_img_list= []
+        template_img_list=[]
         anomaly_point_lists=[]
-        label_list=[]
+        anomaly_loc_and_label_list=[]
         image_name_list=[]
         original_img_shape_list=[]
         # extract test set features
-        for kk, (x, template_img, label, anomaly_points, image_name,original_img_shape) in tqdm(enumerate(test_dataloader), '| feature extraction | test | %s |' % class_name):
-            test_imgs.extend(x)
-            template_imgs.extend(template_img)
-            anomaly_point_lists.extend(anomaly_points)
-            label_list.extend(label)
+        for kk, (x, template_img, anomaly_loc_and_label, image_name,original_img_shape) in tqdm(enumerate(test_dataloader), '| feature extraction | test | %s |' % class_name):
+            test_img_list.extend(x)
+            template_img_list.extend(template_img)
+            anomaly_loc_and_label_list.extend(anomaly_loc_and_label)
             image_name_list.extend(image_name)
             original_img_shape_list.extend(original_img_shape)
 
             #gt_list.extend(y.cpu().detach().numpy())
             #gt_mask_list.extend(mask.cpu().detach().numpy())
             # model prediction
+            
             with torch.no_grad():
                 _ = model(x.to(device))
+            """if  kk==0:
+                model=tensorrt_optimize_model(torch.stack(test_img_list),model)"""
+           
+            # get intermediate layer outputs
     
             # get intermediate layer outputs
             for k, v in zip(test_outputs.keys(), outputs):
@@ -321,7 +327,7 @@ def main():
         
         os.makedirs(save_picture_dir, exist_ok=True)
         os.makedirs(save_image_dir, exist_ok=True)
-        plot_fig(test_imgs,template_imgs,label_list,original_img_shape_list,scores, anomaly_point_lists,save_picture_dir,save_image_dir,class_name,args.threshold_coefficient,image_name_list)
+        plot_fig(test_img_list,template_img_list,anomaly_loc_and_label_list,original_img_shape_list,scores, anomaly_point_lists,save_picture_dir,save_image_dir,class_name,args.threshold_coefficient,image_name_list)
 
     """print('Average ROCAUC: %.3f' % np.mean(total_roc_auc))
     fig_img_rocauc.title.set_text('Average image ROCAUC: %.3f' % np.mean(total_roc_auc))
@@ -357,59 +363,67 @@ def grabcut_image_segment(image,mask):
     output = cv2.bitwise_and(image, image, mask=outputMask)
     return output
 
-def segment_image(img,img_for_backgroud_subtraction,template_img,label,original_img_shape,heat_map,mask,points,save_image_dir,class_name,image_name,step=5):
+def segment_image(img,template_img,heat_map,mask,anomaly_loc_and_label,original_img_shape,save_image_dir,class_name,image_name):
+    height,width=original_img_shape[:2]
+    img=cv2.resize(img,(height,width))
+    template_img=template_img.numpy().astype("uint8")
+    template_img=template_img.transpose(1,2,0)
+    template_img=cv2.resize(template_img,(height,width))
+    heat_map=cv2.resize(heat_map,(height,width))
+    mask=cv2.resize(mask,(height,width))
+
     image_label_for_classifiation=[]
-    x1,y1,x2,y2 =points
     mask=mask.astype("uint8")
-    mask_contour,hierarchy  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    mask,mask_contour, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     # loop over the contours
     for i, cnt in enumerate(mask_contour):
-        # compute the center of image
-        M = cv2.moments(cnt)
-        cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
+        # image segment from predicted mask
+        mask_predicted = cv2.fillPoly(np.zeros_like(img), [cnt], (255,255,255))
+        for point,label in anomaly_loc_and_label.items():
+            shape=np.array(decode_labelme_shape(point))
+            shape=shape.astype("uint8")
+            x1,y1,x2,y2 = shape[:,0].min(), shape[:,1].min(), shape[:,0].max(), shape[:,1].max()  
+            mask_annotation,binary, contours_annotation,hierarchy=pcv.rectangle_mask(img=img,p1=(x1,y1),p2=(x2,y2),color="black")
+            mask_combined=cv2.bitwise_and(mask_annotation,mask_predicted)
+            mask_combined=cv2.cvtColor(mask_combined,cv2.COLOR_BGR2GRAY)
+            rect,binary_mask_combined=cv2.threshold(mask_combined,5,255,cv2.THRESH_BINARY)
+            binary_mask_combined,contour_combined,obj_hierarchy=cv2.findContours(binary_mask_combined,cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            contour_area_threshold=2
+            if len(contour_combined)>0:
+                contour_area_comblined=cv2.contourArea(contour_combined[0])*contour_area_threshold
+            else:
+                continue
+            if contour_area_comblined>= cv2.contourArea(contours_annotation[0]) or contour_area_comblined>=cv2.contourArea(cnt): 
+                foreground = cv2.bitwise_and(img, mask_predicted)
+                bounding_box=cv2.boundingRect(cnt)
+                x, y, w, h = bounding_box
+                #croped_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
+                #get maskfrom heat map      
+                small_mask=get_mask_from_heat_map(heat_map)
+                small_mask_pure_foreground=crop_image(small_mask,bounding_box)
+                croped_region_pure_foreground=crop_image(img,bounding_box)
+                croped_template_img=crop_image(template_img,bounding_box)
+                if w>7 and h>7:
+                    if  small_mask_pure_foreground.size != 0 and small_mask_pure_foreground.max()!=0:
+                        croped_region_pure_foreground=grabcut_image_segment(croped_region_pure_foreground,small_mask_pure_foreground)
+                    flag, diff_mask,bounding_box_diff=get_mask_from_backgroud_subtraction(croped_region_pure_foreground,croped_template_img)
+                    if flag==1:
+                        croped_region_pure_foreground = cv2.bitwise_and(croped_region_pure_foreground,diff_mask)
+                if croped_region_pure_foreground.size>0:
+                    plt.imshow(croped_region_pure_foreground[:,:,::-1])
+                    plt.axis("off")
+                    save_file_name=os.path.join(save_image_dir,image_name)
+                    save_file_dir,save_image_name=os.path.split(save_file_name)
+                    save_file_name_without_ext=os.path.splitext(save_image_name)[0]
+                    if not os.path.exists(save_file_dir):
+                        os.makedirs(save_file_dir)
+                    save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+"_"+str(i)+".jpg")
+                    plt.imsave(save_image_name_new,croped_region_pure_foreground)
+                    image_label_for_classifiation.append([save_image_name_new,label])
 
-        # image segment from small mask
-
-        contour_mask = cv2.fillPoly(np.zeros_like(img), [cnt], (255,255,255))
-        foreground = cv2.bitwise_and(img, contour_mask)
-        bounding_box=cv2.boundingRect(cnt)
-        x, y, w, h = bounding_box
-        #crop_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
-
-        #mask get from heat map      
-        small_mask=get_mask_from_heat_map(heat_map)
-        markers = ndi.label(small_mask)[0]
-        small_mask_pure_foreground= small_mask[y:y+h,x:x+w]
-
-        crop_region_pure_foreground=img[y:y+h,x:x+w]
-        if w>7 and h>7:
-            if small_mask_pure_foreground.max()!=0:
-                crop_region_pure_foreground=grabcut_image_segment(crop_region_pure_foreground,small_mask_pure_foreground)
-            flag, diff_mask,bounding_box=get_mask_from_backgroud_subtraction(crop_region_pure_foreground,template_img[:,y:y+h,x:x+w]) 
-            if flag==1:
-                x0, y0, w0, h0 = bounding_box
-                stepx=int(h0/2)
-                stepy=int(w0/2)
-                #crop_region_pure_foreground = cv2.bitwise_and(crop_region_pure_foreground[y0-stepx:y0+h0+stepx,x0-stepy:x0+w0+stepy], diff_mask[y0-stepx:y0+h0+stepx,x0-stepy:x0+w0+stepy])
-
-                crop_region_pure_foreground = cv2.bitwise_and(crop_region_pure_foreground[y0:y0+h0,x0:x0+w0], diff_mask[y0:y0+h0,x0:x0+w0])
-
-        plt.imshow(crop_region_pure_foreground)
-        plt.axis("off")
-        save_file_name=os.path.join(save_image_dir,image_name)
-        save_file_dir,save_image_name=os.path.split(save_file_name)
-        save_file_name_without_ext=os.path.splitext(save_image_name)[0]
-        if not os.path.exists(save_file_dir):
-            os.makedirs(save_file_dir)
-        save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+"_"+str(i)+".jpg")
-        plt.imsave(save_image_name_new,crop_region_pure_foreground)
-        image_label_for_classifiation.append([save_image_name_new,label])
-
-
-    with open(os.path.join(save_image_dir,"Padim_results_image_label_for_classification.txt"),"a+") as fid:
-        fid.writelines([save_image_name_new+" "+str(i[1])+"\n" for i in image_label_for_classifiation])
-        
+                    with open(os.path.join(save_image_dir,"Padim_segment_image_name_label_for_classification.txt"),"a+") as fid:
+                        fid.writelines([save_image_name_new+" "+str(i[1])+"\n" for i in image_label_for_classifiation])
+                        
 
 def get_threshold_from_hist(heat_map):
     hist = cv2.calcHist([heat_map],[0],None,[256],[0,256])
@@ -449,7 +463,7 @@ def get_mask_from_backgroud_subtraction(image,template_image):
     close_operated_image_diff = cv2.morphologyEx(image_diff, cv2.MORPH_CLOSE, kernel)
     _, thresholded = cv2.threshold(close_operated_image_diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     median = cv2.medianBlur(thresholded, 5)
-    contours, _ = cv2.findContours(median, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    median,contours, _ = cv2.findContours(median, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     if len(contours)==1:
         max_countour = max(contours, key = cv2.contourArea)
@@ -475,16 +489,13 @@ def get_mask_from_backgroud_subtraction(image,template_image):
 
     return  diff_mask_3d"""
     
-def plot_fig(test_img,template_img_list, label_list,original_img_shape_list,scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name_list):
+def plot_fig(test_img,template_img_list,anomaly_loc_and_label_list,original_img_shape_list,scores,anomaly_point_lists, save_picture_dir,save_image_dir,class_name,threshold_coefficient,image_name_list):
     num = len(scores)
     vmax = scores.max() * 255.
     vmin = scores.min() * 255.
     for i in range(num):
         img = test_img[i]
-        template_img=template_img_list[i]
         img=img.numpy().astype("uint8")
-        template_img=template_img.numpy().astype("uint8")
-        img_for_backgroud_subtraction=copy.deepcopy(img)
         """contours=get_contours_from_backgroud_subtraction(img,template_img)
         img=cv2.GaussianBlur(img,(5, 5),0)
         template_img=cv2.GaussianBlur(template_img,(5, 5),0)
@@ -520,20 +531,15 @@ def plot_fig(test_img,template_img_list, label_list,original_img_shape_list,scor
             ax_i.axes.yaxis.set_visible(False) 
         img=(255*img).astype(np.uint8)
         img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
+        img_for_segment=copy.deepcopy(img)
         
-
         ax_img[0].imshow(img)
         ax_img[0].title.set_text('Image')
-        points=anomaly_point_lists[i]
-
-        original_img=(255*img).astype(np.uint8)
         height,width=original_img_shape_list[i][:2]
-        original_img=cv2.resize(original_img,(height,width))
-        img_for_segment=copy.deepcopy(original_img)
-
+        original_img=cv2.resize(img,(height,width))
         ax_img[1].imshow(original_img,cmap="gray")
-        points=anomaly_point_lists[i]
-        for point in points:
+        points=anomaly_loc_and_label_list[i]
+        for point, _ in points.items():
             shape=np.array(decode_labelme_shape(point))
             x1,y1,x2,y2 = shape[:,0].min(), shape[:,1].min(), shape[:,0].max(), shape[:,1].max()
             ax_img[1].plot([x1,x1,x2,x2,x1], [y1, y2, y2, y1, y1])
@@ -570,8 +576,7 @@ def plot_fig(test_img,template_img_list, label_list,original_img_shape_list,scor
             os.makedirs(save_file_dir)
         save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+".jpg")
         plt.savefig(save_image_name_new)
-        segment_image(img_for_segment,img_for_backgroud_subtraction,template_img,label_list[i],original_img_shape_list[i],heat_map,mask,[x1,y1,x2,y2],save_image_dir,class_name,image_name_list[i])
-
+        segment_image(img_for_segment,template_img_list[i],heat_map,mask,anomaly_loc_and_label_list[i],original_img_shape_list[i],save_image_dir,class_name,image_name_list[i])
 
 def denormalization(x):
     mean = np.array([0.485, 0.456, 0.406])
