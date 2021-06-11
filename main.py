@@ -614,3 +614,4 @@ def embedding_concat(x, y):
 if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,3"
     main()
+
