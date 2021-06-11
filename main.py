@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument('--save_path', type=str, default='/git/PaDiM-master/kangqiang_result')
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
     parser.add_argument('--train_num_samples', type=int, default=10)
-    parser.add_argument('--test_num_samples', type=int, default=10)
+    parser.add_argument('--test_num_samples', type=int, default=30)
     parser.add_argument('--product_class', type=str, default='0808QFN-16L')
     parser.add_argument('--threshold_coefficient', type=float, default=0.8)
     parser.add_argument('--gaussian_blur_kernel_size', type=int, default=5)
@@ -68,25 +68,30 @@ def tensorrt_optimize_model(input,original_model):
     print("==> Passed")
     return model
 
-    
 def crop_image(img,bounding_box):
     x, y, w, h = bounding_box
     height,width=img.shape[:2]
-    #croped_region_pure_foreground = foreground[y:y+h,x:x+w]  # only fore groud
     stepx=int(w/4)
     stepy=int(h/4)
     # expand the crop range
     if x<=stepx:
-        stepx=x
+        startx=0
+    else:
+        startx=x-stepx
     if y<=stepy:
-        stepy=y
-    if x>=(height-w-stepx):
-        x=height-w-stepx
-    if y>=(width-h-stepy):
-        y=width-h-stepy
-    crop_images=img[y-stepy:y+h+stepy,x-stepx:x+w+stepx] 
+        starty=0
+    else:
+        starty=y-stepy
+    if x+w+stepx>=width:
+        endx=width
+    else:
+        endx=x+w+stepx
+    if y+h+stepy>=height:
+        endy=height
+    else:
+        endy=y+h+stepy
+    crop_images=img[starty:endy,startx:endx]
     return crop_images
-
 
 
 def main():
@@ -393,6 +398,9 @@ def segment_image(img,template_img,heat_map,mask,anomaly_loc_and_label,original_
                 contour_area_comblined=cv2.contourArea(contour_combined[0])*contour_area_threshold
             else:
                 continue
+            if contours_annotation==[]:
+                continue
+
             if contour_area_comblined>= cv2.contourArea(contours_annotation[0]) or contour_area_comblined>=cv2.contourArea(cnt): 
                 foreground = cv2.bitwise_and(img, mask_predicted)
                 bounding_box=cv2.boundingRect(cnt)
@@ -406,9 +414,12 @@ def segment_image(img,template_img,heat_map,mask,anomaly_loc_and_label,original_
                 if w>7 and h>7:
                     if  small_mask_pure_foreground.size != 0 and small_mask_pure_foreground.max()!=0:
                         croped_region_pure_foreground=grabcut_image_segment(croped_region_pure_foreground,small_mask_pure_foreground)
+                    #print(croped_region_pure_foreground.shape,croped_template_img.shape)
                     flag, diff_mask,bounding_box_diff=get_mask_from_backgroud_subtraction(croped_region_pure_foreground,croped_template_img)
                     if flag==1:
-                        croped_region_pure_foreground = cv2.bitwise_and(croped_region_pure_foreground,diff_mask)
+                        croped_region_pure_foreground=crop_image(croped_region_pure_foreground,bounding_box_diff)
+                        croped_diff_mask=crop_image(diff_mask,bounding_box_diff)
+                        croped_region_pure_foreground = cv2.bitwise_and(croped_region_pure_foreground,croped_diff_mask)
                 if croped_region_pure_foreground.size>0:
                     plt.imshow(croped_region_pure_foreground[:,:,::-1])
                     plt.axis("off")
@@ -419,9 +430,11 @@ def segment_image(img,template_img,heat_map,mask,anomaly_loc_and_label,original_
                         os.makedirs(save_file_dir)
                     save_image_name_new=os.path.join(save_file_dir,save_file_name_without_ext+"_"+str(i)+".jpg")
                     plt.imsave(save_image_name_new,croped_region_pure_foreground)
-                    image_label_for_classifiation.append([save_image_name_new,label])
-
-                    with open(os.path.join(save_image_dir,"Padim_segment_image_name_label_for_classification.txt"),"a+") as fid:
+                    image_name_label_list=[save_image_name_new,label]
+                    if image_name_label_list not in image_label_for_classifiation:
+                        image_label_for_classifiation.append(image_name_label_list)
+                
+    with open(os.path.join(save_image_dir,"Padim_segment_image_name_label_for_classification.txt"),"a+") as fid:
                         fid.writelines([save_image_name_new+" "+str(i[1])+"\n" for i in image_label_for_classifiation])
                         
 
@@ -520,7 +533,6 @@ def plot_fig(test_img,template_img_list,anomaly_loc_and_label_list,original_img_
         mask *= 255
         vis_img = mark_boundaries(img, mask, color=(1, 0, 0), mode='thick')
 
-
         fig_img, ax_img = plt.subplots(1, 5, figsize=(15, 3))
         fig_img.subplots_adjust(right=0.9)
         vmax = scores.max() * 255.
@@ -536,10 +548,10 @@ def plot_fig(test_img,template_img_list,anomaly_loc_and_label_list,original_img_
         ax_img[0].imshow(img)
         ax_img[0].title.set_text('Image')
         height,width=original_img_shape_list[i][:2]
-        original_img=cv2.resize(img,(height,width))
+        original_img=cv2.resize(copy.deepcopy(img),(height,width))
         ax_img[1].imshow(original_img,cmap="gray")
-        points=anomaly_loc_and_label_list[i]
-        for point, _ in points.items():
+        annomaly_points_label=anomaly_loc_and_label_list[i]
+        for point, _ in annomaly_points_label.items():
             shape=np.array(decode_labelme_shape(point))
             x1,y1,x2,y2 = shape[:,0].min(), shape[:,1].min(), shape[:,0].max(), shape[:,1].max()
             ax_img[1].plot([x1,x1,x2,x2,x1], [y1, y2, y2, y1, y1])

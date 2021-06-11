@@ -14,3 +14,12 @@ python image_crop_and_save_image_label_for_classification_parallel.py  2>&1 |tee
 
 python3 /git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification/data_prepare_for_sel
 f-supervised_learning.py
+
+# 获取原始标注和padim segment 共同的扣取
+
+/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification/run_dataset_prepare_for_comparsion.sh
+
+# 然后运行  image_classification_model_training-master 
+python3 /git/PaDiM-master/image_classification_model_training-master/
+
+

@@ -189,7 +189,6 @@ def train(model, loader, optimizer, main_criterion, regu_criterion):
         print(y_batch.max(),y_batch.min())
         optimizer.zero_grad()
         y_pred, embedding = model(x_batch)
-        y_pred = softmax(y_pred)
         main_loss = main_criterion(y_pred, y_batch)
         if regu_criterion:
             regu_loss, _ = regu_criterion(embedding, y_batch)

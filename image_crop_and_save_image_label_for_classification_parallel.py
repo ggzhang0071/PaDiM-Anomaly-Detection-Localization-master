@@ -1,5 +1,4 @@
 # crop image based on the annotation information and save the image and label information
-from dataset  import JsonDataset
 from common_lib.tools.coding_related import decode_distribution
 #from common_lib import decode_labelme_shape
 from coding_related import decode_labelme_shape

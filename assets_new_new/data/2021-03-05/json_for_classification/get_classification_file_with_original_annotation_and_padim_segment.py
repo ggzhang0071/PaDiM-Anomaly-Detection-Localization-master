@@ -1,0 +1,10 @@
+from  get_classification_file_with_original_annotation import  get_image_label_dict_from_original_annotation, get_classification_file_based_on_label
+
+image_name_label_path="/git/PaDiM-master/kangqiang_result/segment_image_result_wide_resnet50_2/Padim_segment_image_name_label_for_classification.txt"
+
+image_data_root="/git/PaDiM-master/kangqiang_result/segment_image_result_wide_resnet50_2/image/**/*.jpg"
+save_image_path="/git/PaDiM-master/kangqiang_result/padim_segment_croped_images_with_classification"
+
+
+image_label_dict=get_image_label_dict_from_original_annotation(image_label_file_name_list=[image_name_label_path])
+get_classification_file_based_on_label(image_label_dict,image_data_root,save_image_path)

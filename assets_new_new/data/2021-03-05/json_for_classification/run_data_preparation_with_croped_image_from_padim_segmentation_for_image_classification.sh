@@ -1,6 +1,5 @@
 # data preparation with croped images from padim segmentation for image classification 
 
-
 timestamp=`date +%Y%m%d%H%M%S`
 #rm Logs/*.log 
 

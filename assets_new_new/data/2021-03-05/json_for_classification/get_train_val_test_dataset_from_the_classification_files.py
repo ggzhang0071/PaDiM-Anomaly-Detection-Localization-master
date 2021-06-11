@@ -2,6 +2,8 @@
 import os,random
 from abc import abstractproperty
 from posixpath import splitext 
+import argparse
+
 
 def split(full_list,shuffle=True,ratio=0.2):
     n_total = len(full_list)
@@ -32,6 +34,7 @@ def get_image_label_list_from_origignal_annotation(image_file_path,choose_labels
             image_name_label_list.append(os.path.join(str(label),image_name)+" "+str(label_mapping_dict[label])+"\n")
     return image_name_label_list
 
+
 def get_train_val_test_dataset(image_name_label_list,train_ratio,val_ratio,save_txt_folder):
     data_train_list,data_list=split(image_name_label_list,ratio=train_ratio)
     data_val_list, data_test_list=split(data_list,ratio=val_ratio)
@@ -47,12 +50,16 @@ def get_train_val_test_dataset(image_name_label_list,train_ratio,val_ratio,save_
 
 if __name__=="__main__":
     # this example is used for  self supervised learning
-    image_file_path="/git/PaDiM-master/kangqiang_result/segment_image_result_wide_resnet50_2"
-    save_txt_folder="/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification/data_prepare_for_semi_supervised_learning"
-    choose_labels=list(range(10))
+    parser=argparse.ArgumentParser(description="get train, val and test file from classification file")
+    parser.add_argument('--choose_labels', nargs='+', help='<Required> Set flag', required=True, default="0 5 7")
+    parser.add_argument("--image_file_path",default="/git/PaDiM-master/kangqiang_result/croped_images_part_with_classification",type=str)
+    parser.add_argument("--save_txt_folder",default="/git/PaDiM-master/assets_new_new/data/2021-03-05/json_for_classification/data_prepare_for_semi_supervised_learning",type=str)
+
+    args=parser.parse_args()
+    choose_labels=args.choose_labels
     label_mapping_dict=label_mapping(choose_labels)
-    image_name_label_list=get_image_label_list_from_origignal_annotation(image_file_path,choose_labels,label_mapping_dict)
-    get_train_val_test_dataset(image_name_label_list,0.7,0.333,save_txt_folder)
+    image_name_label_list=get_image_label_list_from_origignal_annotation(args.image_file_path,choose_labels,label_mapping_dict)
+    get_train_val_test_dataset(image_name_label_list,0.7,0.333,args.save_txt_folder)
 
 
 
