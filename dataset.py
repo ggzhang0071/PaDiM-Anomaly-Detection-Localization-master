@@ -21,7 +21,6 @@ def convert_NG_label(distribution,class_dict):
 def collate_fn(batch):
       img=[]
       template_img=[]
-      y=[]
       anomaly_loc_and_label=[]
       image_name=[]
       original_img_shape=[]
@@ -41,12 +40,13 @@ class JsonDataset(torch.utils.data.Dataset):
   'Characterizes a dataset for PyTorch'
   def __init__(self,json_file,image_data_root,transform=None): 
       'Initialization'
-      self.anomaly_image_path_label_list=[]
       self.transform=transform
-      self.anomaly_loc_and_label_list=[]
+      self.image_data_root=image_data_root
+
       self.image_name_list=[]
       self.template_image_name_list=[]
-      self.image_data_root=image_data_root
+      self.anomaly_loc_and_label_list=[]
+
       with open(json_file,'r') as fid:
             dataset_info = json.load(fid)
             index=-1
@@ -54,6 +54,7 @@ class JsonDataset(torch.utils.data.Dataset):
                   image_path=data_info["info"]["image_path"]
                   template_image_path=data_info["info"]["template_path"]
                   if len(data_info["instances"])>0:
+                        # if the num instance greater than 0, it is a abnormal image
                         self.flag=True
                         index+=1
                         self.image_name_list.append(image_path)
@@ -79,6 +80,7 @@ class JsonDataset(torch.utils.data.Dataset):
             original_img_shape=img.shape
             img=self.transform(image=img)
             img = img["image"].transpose(2,0,1).astype('float32')
+                
             template_img=self.transform(image=template_img)
             template_img = template_img["image"].transpose(2,0,1).astype('float32')
       if self.flag==True:
