@@ -1,8 +1,6 @@
-torch==1.5.0
-pathlib2
-jupyter
-jupyterlab
-torchvision==0.4.0
+albumentations
+opencv-python-headless
+plantcv
 imutils
 onnx
-tensorrt
+typing_extensions

@@ -2,8 +2,10 @@ import random
 from random import sample
 import argparse
 from typing_extensions import runtime
-from PIL.Image import CONTAINER
-from albumentations.augmentations.functional import crop_keypoint_by_coords
+#from PIL.Image import CONTAINER
+from PIL import Image
+#from albumentations.augmentations.functional import crop_keypoint_by_coords
+import albumentations as A
 from matplotlib import image
 import numpy as np
 import os
@@ -29,7 +31,7 @@ import matplotlib as mpl
 mpl.rc('figure', max_open_warning = 0)
 import matplotlib.pyplot as plt
 import matplotlib
-from  coding_related import decode_labelme_shape
+from common_lib.tools.coding_related import decode_labelme_shape
 from config import default_config
 import sys
 import  copy
@@ -44,8 +46,7 @@ from torchvision.models import wide_resnet50_2, resnet18
 
 # device setup
 use_cuda = torch.cuda.is_available()
-device = torch.device('cuda:0,1,3' if use_cuda else 'cpu')
-
+device = torch.device('cuda:0' if use_cuda else 'cpu')
 def parse_args():
     parser = argparse.ArgumentParser('PaDiM')
     #parser.add_argument('--save_path', type=str, default='./mvtec_result')
@@ -53,7 +54,7 @@ def parse_args():
     parser.add_argument('--arch', type=str, choices=['resnet18', 'wide_resnet50_2'], default='wide_resnet50_2')
     parser.add_argument('--train_num_samples', type=int, default=10)
     parser.add_argument('--test_num_samples', type=int, default=30)
-    parser.add_argument('--product_class', type=str, default='0808QFN-16L')
+    parser.add_argument('--product_class', type=str)
     parser.add_argument('--threshold_coefficient', type=float, default=0.8)
     parser.add_argument('--gaussian_blur_kernel_size', type=int, default=5)
     return parser.parse_args()
@@ -139,17 +140,21 @@ def main():
 
     
     # load dataset
-    train_transform = Compose([
-        transforms.Resize(224, 224),
+    train_transform = A.Compose([
+    A.SmallestMaxSize(max_size=224),
+    A.CenterCrop(height=224, width=224)
     ])
 
-    val_transform = Compose([
-        transforms.Resize(224,224),
+
+    val_transform = A.Compose([
+    A.SmallestMaxSize(max_size=224),
+    A.CenterCrop(height=224, width=224)
     ])
     
-    file_path='assets_new_new/data/2021-03-05'
+    file_path='/git/datasets'
     train_file_name='train.json'
     val_file_name="test.json"
+
     product_class=[args.product_class]
     for class_name in product_class:
         train_dataset = JsonDataset(
@@ -206,7 +211,15 @@ def main():
                 # initialize hook outputs
                 outputs = []
             for k, v in train_outputs.items():
-                train_outputs[k] = torch.cat(v, 0)
+                if v:  # 列表不为空
+                    train_outputs[k] = torch.cat(v, dim=0)
+                else:
+                    # 你可以选择跳过，或初始化一个空 tensor（如果后续逻辑需要）
+                    # 例如：train_outputs[k] = torch.empty((0, feature_dim))  # 请替换 feature_dim
+                    print(f"警告：{k} 的张量列表为空，跳过拼接。")
+                    continue
+
+                
 
             # Embedding concat
             embedding_vectors = train_outputs['layer1']
@@ -612,6 +625,6 @@ def embedding_concat(x, y):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     main()
 

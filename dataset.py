@@ -2,12 +2,15 @@ from operator import index
 import torch,json
 import os,cv2
 import numpy as np
-from coding_related import decode_labelme_shape
+from common_lib.tools.coding_related import decode_labelme_shape
 from common_lib.tools.cnn_json_related import ClassNameManager
 from common_lib.tools.coding_related import decode_distribution
 from torch.utils.data import DataLoader, RandomSampler
-from albumentations.core.composition import Compose
 from albumentations.augmentations import transforms
+import albumentations as A
+
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 
 def convert_NG_label(distribution,class_dict):
@@ -36,22 +39,57 @@ def collate_fn(batch):
       return img,template_img,anomaly_loc_and_label,image_name,original_img_shape
 
 
+
+def collate_fn1(batch):
+      img=[]
+      img_rel_path=[]
+      for item in batch:
+            img.append(item[0])
+            img_rel_path.append(item[1])
+
+      return img,img_rel_path
+
+class SheZhenDataset(Dataset):
+    def __init__(self, json_path, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.transform = transform
+
+        with open(os.path.join(root_dir,json_path), 'r', encoding='utf-8') as f:
+            self.img_list = json.load(f)
+
+    def __len__(self):
+        return len(self.img_list)
+
+    def __getitem__(self, idx):
+        img_rel_path = self.img_list[idx]
+        img_path = os.path.join(self.root_dir, img_rel_path)
+
+        img = cv2.imread(img_path)
+        if img is None:
+            raise ValueError(f"Failed to load image: {img_path}")
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        if self.transform:
+            img = self.transform(img)
+        print(img_rel_path)
+
+        return img, img_rel_path
+
+
 class JsonDataset(torch.utils.data.Dataset):
   'Characterizes a dataset for PyTorch'
   def __init__(self,json_file,image_data_root,transform=None): 
       'Initialization'
       self.transform=transform
       self.image_data_root=image_data_root
-
       self.image_name_list=[]
       self.template_image_name_list=[]
       self.anomaly_loc_and_label_list=[]
-
       with open(json_file,'r') as fid:
             dataset_info = json.load(fid)
             index=-1
-            for data_info in dataset_info["record"]:
-                  image_path=data_info["info"]["image_path"]
+            for image_path in dataset_info:
                   template_image_path=data_info["info"]["template_path"]
                   if len(data_info["instances"])>0:
                         # if the num instance greater than 0, it is a abnormal image
@@ -89,21 +127,55 @@ class JsonDataset(torch.utils.data.Dataset):
             return img
 
 if __name__=="__main__":
-      data_list=[]
-      file_path='assets_new_new/data/2021-03-05/DFN-5X6-8L'
-      Image_Data_Root = '/git/dataSet/raw/unsupervised-learning/kangqiang'
+      """data_list=[]
+      file_path='/git/datasets/she_zhen_data'
+      Image_Data_Root = '/git/datasets/she_zhen_data'
       test_file_name='test.json'
       train_sampler=10
-      test_transform = Compose([
-        transforms.Resize(224,224),])
+      test_transform = A.Compose([
+            A.SmallestMaxSize(max_size=224),
+            A.CenterCrop(height=224, width=224)
+            ])
       test_dataset = JsonDataset(
             json_file=os.path.join(file_path,test_file_name), 
             image_data_root=Image_Data_Root,
-                        transform=test_transform,)
+            transform=test_transform,)
       test_dataloader =DataLoader(test_dataset,batch_size=128,collate_fn=collate_fn)
       for i, (img,template_img,anomaly_loc_and_label,image_name,original_img_shape) in enumerate(test_dataloader):
             if i==0:
                   print(anomaly_loc_and_label)
                   break
+      """
+      transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+                  ])
+
+      train_dataset = SheZhenDataset(
+        json_path='train.json',
+        root_dir='/git/datasets/she_zhen_data',
+        transform=transform
+      )
+
+      test_dataset = SheZhenDataset(
+        json_path='test.json',
+        root_dir='/git/datasets/she_zhen_data',
+        transform=transform
+       )
+      print(f"Train samples: {len(train_dataset)}")
+      print(f"Test samples: {len(test_dataset)}")
+
+
+      test_dataloader =DataLoader(test_dataset,batch_size=128,collate_fn=collate_fn1)
+      
+      for i, (img,img_rel_path) in enumerate(test_dataloader):
+            if i==0:
+                  print(img)
+                  break
+      
+
 
              

@@ -1,8 +1,21 @@
 # Padim 用于异常检测
+
+## 首先运行 docker_cmd_15.sh 文件
+
+## 安装 requirements.txt 文件
+```bash pip install -r requirements.txt --use-feature=2020-resolver```
+
+
+## 安装缺失的libGL.so.1，这是 OpenGL 的一个共享库，通常由 mesa 或 NVIDIA 驱动提供。
+```bash
+apt update
+apt install -y libgl1
+```
+
 算法流程：
 1、 算法做异常检测， 运行：
 
-python3  main.py
+ bash run_padim.sh 
 
 # 数据处理获取用于 图像分类
 rm -rf  kangqiang_result/croped_images/*
